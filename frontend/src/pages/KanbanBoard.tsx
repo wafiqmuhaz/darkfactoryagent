@@ -1,10 +1,10 @@
-import React from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiClient } from '../api/client';
 import { useProjectStore } from '../store';
+import type { ProjectState } from '../store';
 
 export const KanbanBoard = () => {
-  const currentProjectId = useProjectStore((state) => state.currentProjectId);
+  const currentProjectId = useProjectStore((state: ProjectState) => state.currentProjectId);
 
   const { data: tasks = [], isLoading } = useQuery({
     queryKey: ['tasks', currentProjectId],

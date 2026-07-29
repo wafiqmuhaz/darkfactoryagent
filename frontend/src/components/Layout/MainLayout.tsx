@@ -1,8 +1,9 @@
 import React from 'react';
 import { useAuthStore } from '../../store';
+import type { AuthState } from '../../store';
 
 export const Layout = ({ children }: { children: React.ReactNode }) => {
-  const logout = useAuthStore((state) => state.logout);
+  const logout = useAuthStore((state: AuthState) => state.logout);
 
   return (
     <div className="flex h-screen w-full bg-background">

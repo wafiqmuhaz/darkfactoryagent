@@ -1,13 +1,13 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
-interface User {
+export interface User {
   id: string;
   username: string;
   email: string;
 }
 
-interface AuthState {
+export interface AuthState {
   user: User | null;
   token: string | null;
   setAuth: (user: User, token: string) => void;
@@ -19,7 +19,7 @@ export const useAuthStore = create<AuthState>()(
     (set) => ({
       user: null,
       token: null,
-      setAuth: (user, token) => set({ user, token }),
+      setAuth: (user: User, token: string) => set({ user, token }),
       logout: () => set({ user: null, token: null }),
     }),
     {
@@ -28,7 +28,7 @@ export const useAuthStore = create<AuthState>()(
   )
 );
 
-interface ProjectState {
+export interface ProjectState {
   currentProjectId: string | null;
   setCurrentProject: (id: string | null) => void;
 }
@@ -37,7 +37,7 @@ export const useProjectStore = create<ProjectState>()(
   persist(
     (set) => ({
       currentProjectId: null,
-      setCurrentProject: (id) => set({ currentProjectId: id }),
+      setCurrentProject: (id: string | null) => set({ currentProjectId: id }),
     }),
     {
       name: 'project-storage',
