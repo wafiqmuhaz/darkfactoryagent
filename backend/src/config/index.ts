@@ -7,7 +7,7 @@ export const config = {
   // Server
   nodeEnv: process.env.NODE_ENV || 'development',
   port: parseInt(process.env.PORT || '3001', 10),
-  frontendUrl: process.env.FRONTEND_URL || 'http://localhost:5173',
+  frontendUrl: process.env.FRONTEND_URL || 'http://localhost:3000',
 
   // Auth
   jwtSecret: process.env.JWT_SECRET || 'dev-secret-change-me',
