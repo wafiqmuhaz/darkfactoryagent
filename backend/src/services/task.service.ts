@@ -1,13 +1,33 @@
-import { PrismaClient, TaskStatus, TaskPriority } from '@prisma/client';
+import { PrismaClient } from '@prisma/client';
 import { emitTaskCreated, emitTaskUpdated, emitTaskDeleted } from '../websocket/socket';
 
 const prisma = new PrismaClient();
 
+// Task status/priority are stored as String in Prisma schema
+export type TaskStatusType = 'backlog' | 'todo' | 'in_progress' | 'review' | 'done' | 'failed';
+export type TaskPriorityType = 'low' | 'medium' | 'high' | 'critical';
+
+export const TaskStatus = {
+  BACKLOG: 'backlog' as const,
+  TODO: 'todo' as const,
+  IN_PROGRESS: 'in_progress' as const,
+  REVIEW: 'review' as const,
+  DONE: 'done' as const,
+  FAILED: 'failed' as const,
+};
+
+export const TaskPriority = {
+  LOW: 'low' as const,
+  MEDIUM: 'medium' as const,
+  HIGH: 'high' as const,
+  CRITICAL: 'critical' as const,
+};
+
 export interface CreateTaskInput {
   title: string;
   description?: string;
-  status?: TaskStatus;
-  priority?: TaskPriority;
+  status?: string;
+  priority?: string;
   projectId: string;
   parentTaskId?: string;
 }
@@ -15,8 +35,8 @@ export interface CreateTaskInput {
 export interface UpdateTaskInput {
   title?: string;
   description?: string;
-  status?: TaskStatus;
-  priority?: TaskPriority;
+  status?: string;
+  priority?: string;
   assignedAgentId?: string;
 }
 
@@ -38,7 +58,7 @@ export class TaskService {
         status: input.status || TaskStatus.BACKLOG,
         priority: input.priority || TaskPriority.MEDIUM,
         projectId: input.projectId,
-        parentTaskId: input.parentTaskId,
+        parentId: input.parentTaskId,
       },
     });
 
@@ -63,7 +83,7 @@ export class TaskService {
     return task;
   }
 
-  async listTasks(projectId: string, filter?: { status?: TaskStatus; priority?: TaskPriority }) {
+  async listTasks(projectId: string, filter?: { status?: string; priority?: string }) {
     return prisma.task.findMany({
       where: {
         projectId,
@@ -86,7 +106,7 @@ export class TaskService {
     return task;
   }
 
-  async updateTaskStatus(taskId: string, status: TaskStatus) {
+  async updateTaskStatus(taskId: string, status: string) {
     const task = await prisma.task.update({
       where: { id: taskId },
       data: { status },

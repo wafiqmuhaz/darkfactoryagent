@@ -14,7 +14,7 @@ let io: Server;
 export const initWebSocket = (server: HttpServer): Server => {
   io = new Server(server, {
     cors: {
-      origin: config.corsOrigin,
+      origin: config.frontendUrl,
       methods: ['GET', 'POST'],
       credentials: true,
     },

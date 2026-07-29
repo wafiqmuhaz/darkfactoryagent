@@ -1,7 +1,8 @@
 import { logger } from '../utils/logger';
 import { taskService } from '../services/task.service';
 import { taskQueue } from './queue';
-import { TaskStatus } from '@prisma/client';
+// Task status is stored as String in Prisma schema
+type TaskStatus = string;
 
 export class Pipeline {
   async prioritizeBacklog() {

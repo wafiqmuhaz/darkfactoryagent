@@ -16,7 +16,7 @@ export class GDPRService {
     if (!user) throw new Error('User not found');
     
     // Scrub sensitive data before export
-    const { password, ...safeUserData } = user;
+    const { passwordHash, ...safeUserData } = user;
     return safeUserData;
   }
 

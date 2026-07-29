@@ -5,8 +5,8 @@ import { chiefOfStaffAgent } from '../agents/chief-of-staff';
 import { AgentContext } from '../agents/base-agent';
 
 const connection = {
-  host: config.redisHost,
-  port: parseInt(config.redisPort, 10),
+  host: config.redis.host,
+  port: config.redis.port,
 };
 
 export const taskQueue = new Queue('dark-factory-tasks', { 
