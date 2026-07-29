@@ -24,3 +24,6 @@ export function authMiddleware(req: AuthRequest, res: Response, next: NextFuncti
     res.status(401).json({ error: 'Invalid or expired token' });
   }
 }
+
+// Alias for routes that use the name 'authenticate'
+export const authenticate = authMiddleware;

@@ -14,6 +14,12 @@ import { metricsRoutes } from './routes/metrics.routes';
 import { webhookRoutes } from './routes/webhook.routes';
 import { oauthRoutes } from './routes/oauth.routes';
 import { ssoRoutes } from './routes/sso.routes';
+import { aiRoutes } from './routes/ai.routes';
+import { pluginRoutes } from './routes/plugin.routes';
+import { skillStudioRoutes } from './routes/skill-studio.routes';
+import { teamRoutes } from './routes/team.routes';
+import { enterpriseRoutes } from './routes/enterprise.routes';
+import { integrationRoutes } from './routes/integration.routes';
 import { auditLogger } from './middleware/auditLogger';
 import { apiRateLimiter } from './middleware/rateLimiter';
 
@@ -72,6 +78,12 @@ if (MODE === 'api' || MODE === 'monolith') {
   app.use('/api/metrics', metricsRoutes);
   app.use('/api/webhooks', webhookRoutes);
   app.use('/api/oauth', oauthRoutes);
+  app.use('/api/ai', aiRoutes);
+  app.use('/api/plugins', pluginRoutes);
+  app.use('/api/skill-studio', skillStudioRoutes);
+  app.use('/api/teams', teamRoutes);
+  app.use('/api/enterprise', enterpriseRoutes);
+  app.use('/api/integrations', integrationRoutes);
 
   // Error handling middleware
   app.use(errorHandler);

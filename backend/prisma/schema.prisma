@@ -178,3 +178,143 @@ model Metric {
   @@index([category, name, recordedAt])
   @@map("metrics")
 }
+
+// ─── Sprint 17: Developer Ecosystem ─────────────────────────────────
+
+// 6.11 Plugin Marketplace
+model Plugin {
+  id           String   @id @default(uuid())
+  name         String   @unique
+  displayName  String   @map("display_name")
+  description  String?
+  version      String   @default("1.0.0")
+  author       String
+  category     String                    // skill, integration, theme, agent
+  entrypoint   String                    // path or URL to plugin code
+  configSchema String?  @map("config_schema") // JSON schema for config
+  isPublished  Boolean  @default(false) @map("is_published")
+  isEnabled    Boolean  @default(true)  @map("is_enabled")
+  downloads    Int      @default(0)
+  rating       Float    @default(0)
+  ratingCount  Int      @default(0)     @map("rating_count")
+  tags         String?                  // comma-separated
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt      @map("updated_at")
+
+  installations PluginInstall[]
+
+  @@map("plugins")
+}
+
+model PluginInstall {
+  id        String   @id @default(uuid())
+  config    String?  // JSON config blob
+  installedAt DateTime @default(now()) @map("installed_at")
+
+  pluginId  String   @map("plugin_id")
+  plugin    Plugin   @relation(fields: [pluginId], references: [id], onDelete: Cascade)
+
+  teamId    String?  @map("team_id")
+  team      Team?    @relation(fields: [teamId], references: [id], onDelete: SetNull)
+
+  @@map("plugin_installs")
+}
+
+// 6.12 Custom Skill Studio
+model CustomSkill {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  displayName String   @map("display_name")
+  description String?
+  prompt      String                    // System prompt / instruction
+  parameters  String?                  // JSON schema for parameters
+  model       String?                  // Preferred AI model override
+  examples    String?                  // JSON array of example I/O pairs
+  isPublic    Boolean  @default(false) @map("is_public")
+  testResults String?  @map("test_results") // JSON last test run results
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt      @map("updated_at")
+
+  authorId    String   @map("author_id")
+
+  @@map("custom_skills")
+}
+
+// 6.13 Team Collaboration
+model Team {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  displayName String   @map("display_name")
+  description String?
+  plan        String   @default("free") // free, pro, enterprise
+  maxMembers  Int      @default(5)      @map("max_members")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt      @map("updated_at")
+
+  members     TeamMember[]
+  workspaces  Workspace[]
+  plugins     PluginInstall[]
+  invoices    Invoice[]
+
+  @@map("teams")
+}
+
+model TeamMember {
+  id        String   @id @default(uuid())
+  role      String   @default("member") // owner, admin, member, viewer
+  joinedAt  DateTime @default(now()) @map("joined_at")
+
+  teamId    String   @map("team_id")
+  team      Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  userId    String   @map("user_id")
+
+  @@unique([teamId, userId])
+  @@map("team_members")
+}
+
+model Workspace {
+  id          String   @id @default(uuid())
+  name        String
+  description String?
+  settings    String?  // JSON workspace settings
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt      @map("updated_at")
+
+  teamId      String   @map("team_id")
+  team        Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@map("workspaces")
+}
+
+// 6.14 Enterprise: Billing
+model Invoice {
+  id          String   @id @default(uuid())
+  amount      Float
+  currency    String   @default("USD")
+  status      String   @default("pending") // pending, paid, failed, refunded
+  description String?
+  period      String?  // e.g., "2025-07"
+  paidAt      DateTime? @map("paid_at")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  teamId      String   @map("team_id")
+  team        Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@map("invoices")
+}
+
+// 6.15 Integration Hub
+model Integration {
+  id          String   @id @default(uuid())
+  name        String                    // e.g., "github", "jira", "slack", "linear"
+  displayName String   @map("display_name")
+  type        String                    // vcs, pm, chat, ci, storage
+  config      String?                  // Encrypted JSON config
+  isActive    Boolean  @default(true)  @map("is_active")
+  lastSyncAt  DateTime? @map("last_sync_at")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt      @map("updated_at")
+
+  @@map("integrations")
+}
