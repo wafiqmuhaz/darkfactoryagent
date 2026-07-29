@@ -27,6 +27,8 @@ export const taskQueue = new Queue('dark-factory-tasks', {
   }
 });
 
+import { dataLakeService } from '../services/datalake.service';
+
 export const initQueueWorker = () => {
   const worker = new Worker(
     'dark-factory-tasks',
@@ -55,10 +57,32 @@ export const initQueueWorker = () => {
 
   worker.on('completed', (job) => {
     logger.info(`Job ${job.id} completed successfully`);
+    dataLakeService.logEvent({
+      eventType: 'agent_run',
+      timestamp: new Date().toISOString(),
+      data: {
+        jobId: job.id,
+        taskId: job.data.taskId,
+        agentType: job.data.agentType,
+        status: 'completed'
+      }
+    });
   });
 
   worker.on('failed', (job, err) => {
     logger.error(`Job ${job?.id} failed with error: ${err.message}`);
+    if (job) {
+      dataLakeService.logEvent({
+        eventType: 'error',
+        timestamp: new Date().toISOString(),
+        data: {
+          jobId: job.id,
+          taskId: job.data.taskId,
+          agentType: job.data.agentType,
+          error: err.message
+        }
+      });
+    }
   });
 
   return worker;
