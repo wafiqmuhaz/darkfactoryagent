@@ -1,0 +1,180 @@
+// ─── Dark Factory AI Agent System — Database Schema ─────────────────
+// SQLite for local development. Switch datasource to PostgreSQL for production.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Users ──────────────────────────────────────────────────────────
+
+model User {
+  id           String    @id @default(uuid())
+  username     String    @unique
+  email        String    @unique
+  passwordHash String    @map("password_hash")
+  avatarUrl    String?   @map("avatar_url")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  projects     Project[]
+
+  @@map("users")
+}
+
+// ─── Projects ───────────────────────────────────────────────────────
+
+model Project {
+  id          String   @id @default(uuid())
+  name        String
+  description String?
+  path        String                // Local filesystem path to the project
+  repoUrl     String?  @map("repo_url") // GitHub/GitLab remote URL
+  branch      String   @default("main")
+  language    String?               // Primary language (e.g., "typescript")
+  framework   String?               // Framework (e.g., "react", "express")
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  ownerId     String   @map("owner_id")
+  owner       User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+
+  tasks       Task[]
+  artifacts   Artifact[]
+  agentRuns   AgentRun[]
+
+  @@map("projects")
+}
+
+// ─── Tasks ──────────────────────────────────────────────────────────
+
+model Task {
+  id            String     @id @default(uuid())
+  title         String
+  description   String?
+  status        String     @default("backlog") // backlog, todo, in_progress, review, done, failed
+  priority      String     @default("medium")  // low, medium, high, critical
+  type          String     @default("feature")  // feature, bug, refactor, test, docs
+  complexity    Int        @default(1)          // 1-5 story points
+  assignedAgent String?    @map("assigned_agent") // Agent ID assigned to this task
+  parentId      String?    @map("parent_id")      // For sub-task relationships
+  labels        String?                            // Comma-separated labels
+  dueDate       DateTime?  @map("due_date")
+  startedAt     DateTime?  @map("started_at")
+  completedAt   DateTime?  @map("completed_at")
+  createdAt     DateTime   @default(now()) @map("created_at")
+  updatedAt     DateTime   @updatedAt @map("updated_at")
+
+  projectId     String     @map("project_id")
+  project       Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  parent        Task?      @relation("SubTasks", fields: [parentId], references: [id])
+  subTasks      Task[]     @relation("SubTasks")
+  artifacts     Artifact[]
+  agentRuns     AgentRun[]
+  comments      Comment[]
+
+  @@index([projectId, status])
+  @@index([assignedAgent])
+  @@map("tasks")
+}
+
+// ─── Comments ───────────────────────────────────────────────────────
+
+model Comment {
+  id        String   @id @default(uuid())
+  content   String
+  author    String                    // "user" or agent ID
+  createdAt DateTime @default(now()) @map("created_at")
+
+  taskId    String   @map("task_id")
+  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@map("comments")
+}
+
+// ─── Artifacts ──────────────────────────────────────────────────────
+
+model Artifact {
+  id        String   @id @default(uuid())
+  type      String                    // code, spec, test, review, doc, pr
+  name      String
+  content   String                    // Content or file path
+  metadata  String?                   // JSON string for flexible metadata
+  createdAt DateTime @default(now()) @map("created_at")
+
+  taskId    String?  @map("task_id")
+  task      Task?    @relation(fields: [taskId], references: [id], onDelete: SetNull)
+
+  projectId String?  @map("project_id")
+  project   Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+
+  agentRunId String? @map("agent_run_id")
+  agentRun   AgentRun? @relation(fields: [agentRunId], references: [id], onDelete: SetNull)
+
+  @@map("artifacts")
+}
+
+// ─── Skills ─────────────────────────────────────────────────────────
+
+model Skill {
+  id          String  @id @default(uuid())
+  name        String  @unique
+  description String?
+  category    String                   // browser, mobile, filesystem, api, custom
+  agentType   String  @map("agent_type") // Which agent types can use this skill
+  parameters  String?                  // JSON schema for parameters
+  isEnabled   Boolean @default(true) @map("is_enabled")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@map("skills")
+}
+
+// ─── Agent Runs ─────────────────────────────────────────────────────
+
+model AgentRun {
+  id          String    @id @default(uuid())
+  agentType   String    @map("agent_type")  // chief-of-staff, spec-writer, code-writer, etc.
+  status      String    @default("pending")  // pending, running, completed, failed, cancelled
+  input       String?                        // JSON input parameters
+  output      String?                        // JSON output / result
+  logs        String?                        // Execution logs
+  error       String?                        // Error message if failed
+  tokensUsed  Int       @default(0) @map("tokens_used")
+  cost        Float     @default(0)          // Estimated cost in USD
+  duration    Int       @default(0)          // Duration in seconds
+  startedAt   DateTime? @map("started_at")
+  completedAt DateTime? @map("completed_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  taskId      String?   @map("task_id")
+  task        Task?     @relation(fields: [taskId], references: [id], onDelete: SetNull)
+
+  projectId   String?   @map("project_id")
+  project     Project?  @relation(fields: [projectId], references: [id], onDelete: SetNull)
+
+  artifacts   Artifact[]
+
+  @@index([agentType, status])
+  @@map("agent_runs")
+}
+
+// ─── Metrics ────────────────────────────────────────────────────────
+
+model Metric {
+  id          String   @id @default(uuid())
+  category    String                     // cost, performance, quality, productivity
+  name        String                     // e.g., "tokens_used", "tasks_completed"
+  value       Float
+  unit        String?                    // e.g., "tokens", "usd", "seconds", "percent"
+  metadata    String?                    // JSON for extra context
+  recordedAt  DateTime @default(now()) @map("recorded_at")
+
+  @@index([category, name, recordedAt])
+  @@map("metrics")
+}
