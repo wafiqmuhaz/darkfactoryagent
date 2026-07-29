@@ -10,6 +10,7 @@ import { errorHandler } from './middleware/errorHandler';
 import { authRoutes } from './routes/auth.routes';
 import { projectRoutes } from './routes/project.routes';
 import { taskRoutes } from './routes/task.routes';
+import { metricsRoutes } from './routes/metrics.routes';
 
 const app = express();
 const httpServer = createServer(app);
@@ -35,6 +36,7 @@ app.use((req, res, next) => {
 app.use('/api/auth', authRoutes);
 app.use('/api/projects', projectRoutes);
 app.use('/api/tasks', taskRoutes);
+app.use('/api/metrics', metricsRoutes);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {

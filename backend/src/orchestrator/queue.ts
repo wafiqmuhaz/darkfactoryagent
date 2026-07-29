@@ -9,13 +9,29 @@ const connection = {
   port: parseInt(config.redisPort, 10),
 };
 
-export const taskQueue = new Queue('dark-factory-tasks', { connection });
+export const taskQueue = new Queue('dark-factory-tasks', { 
+  connection,
+  defaultJobOptions: {
+    attempts: 3,
+    backoff: {
+      type: 'exponential',
+      delay: 5000,
+    },
+    removeOnComplete: {
+      age: 3600, // keep for 1 hour
+      count: 1000, // keep max 1000 completed
+    },
+    removeOnFail: {
+      age: 24 * 3600, // keep for 24 hours
+    }
+  }
+});
 
 export const initQueueWorker = () => {
   const worker = new Worker(
     'dark-factory-tasks',
     async (job: Job) => {
-      logger.info(`Processing job ${job.id} for task ${job.data.taskId}`);
+      logger.info(`Processing job ${job.id} for task ${job.data.taskId} (Attempt: ${job.attemptsMade + 1})`);
       
       const context: AgentContext = {
         projectId: job.data.projectId,
@@ -24,8 +40,6 @@ export const initQueueWorker = () => {
       };
 
       try {
-        // Dispatch to appropriate agent based on job.data.agentType
-        // For now, defaulting to Chief of Staff for orchestration jobs
         if (job.data.agentType === 'chief-of-staff') {
           return await chiefOfStaffAgent.execute(context, job.data.input);
         }
@@ -36,7 +50,7 @@ export const initQueueWorker = () => {
         throw error;
       }
     },
-    { connection }
+    { connection, concurrency: 5 }
   );
 
   worker.on('completed', (job) => {
