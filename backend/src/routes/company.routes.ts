@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { PrismaClient } from '@prisma/client';
-import { authenticate } from '../middleware/auth';
+import { authenticate, AuthRequest } from '../middleware/auth';
 import { logger } from '../utils/logger';
 import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
@@ -11,7 +11,7 @@ export const companyRoutes = Router();
 // GET /api/company — Get current user's company
 companyRoutes.get('/', authenticate, async (req, res) => {
   try {
-    const userId = (req as any).user?.id;
+    const userId = (req as AuthRequest).userId!;
     const membership = await prisma.companyMember.findFirst({
       where: { userId },
       include: {
@@ -33,7 +33,7 @@ companyRoutes.get('/', authenticate, async (req, res) => {
 // PUT /api/company — Update company details
 companyRoutes.put('/', authenticate, async (req, res) => {
   try {
-    const userId = (req as any).user?.id;
+    const userId = (req as AuthRequest).userId!;
     const { name, mission } = req.body;
     const membership = await prisma.companyMember.findFirst({
       where: { userId },
@@ -58,7 +58,7 @@ companyRoutes.put('/', authenticate, async (req, res) => {
 // GET /api/company/members — List company members
 companyRoutes.get('/members', authenticate, async (req, res) => {
   try {
-    const userId = (req as any).user?.id;
+    const userId = (req as AuthRequest).userId!;
     const membership = await prisma.companyMember.findFirst({
       where: { userId },
     });
@@ -80,7 +80,7 @@ companyRoutes.patch('/members/:userId', authenticate, async (req, res) => {
   try {
     const targetUserId = req.params.userId as string;
     const { role } = req.body;
-    const currentUserId = (req as any).user?.id;
+    const currentUserId = (req as AuthRequest).userId!;
 
     const membership = await prisma.companyMember.findFirst({
       where: { userId: currentUserId },
@@ -103,7 +103,7 @@ companyRoutes.patch('/members/:userId', authenticate, async (req, res) => {
 companyRoutes.delete('/members/:userId', authenticate, async (req, res) => {
   try {
     const targetUserId = req.params.userId as string;
-    const currentUserId = (req as any).user?.id;
+    const currentUserId = (req as AuthRequest).userId!;
     if (targetUserId === currentUserId) {
       return res.status(400).json({ error: 'Cannot remove yourself' });
     }
@@ -130,7 +130,7 @@ companyRoutes.post('/invites', authenticate, async (req, res) => {
     const { email, role } = req.body;
     if (!email) return res.status(400).json({ error: 'Email is required' });
 
-    const userId = (req as any).user?.id;
+    const userId = (req as AuthRequest).userId!;
     const membership = await prisma.companyMember.findFirst({
       where: { userId },
     });
@@ -161,7 +161,7 @@ companyRoutes.post('/invites', authenticate, async (req, res) => {
 // GET /api/company/invites — List invites
 companyRoutes.get('/invites', authenticate, async (req, res) => {
   try {
-    const userId = (req as any).user?.id;
+    const userId = (req as AuthRequest).userId!;
     const membership = await prisma.companyMember.findFirst({
       where: { userId },
     });
@@ -228,7 +228,7 @@ companyRoutes.delete('/secrets/:key', authenticate, async (req, res) => {
 // GET /api/company/projects — List company projects
 companyRoutes.get('/projects', authenticate, async (req, res) => {
   try {
-    const userId = (req as any).user?.id;
+    const userId = (req as AuthRequest).userId!;
     const membership = await prisma.companyMember.findFirst({
       where: { userId },
     });

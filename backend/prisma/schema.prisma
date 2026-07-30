@@ -149,13 +149,22 @@ model AgentRun {
   id          String    @id @default(uuid())
   agentType   String    @map("agent_type")  // chief-of-staff, spec-writer, code-writer, etc.
   status      String    @default("pending")  // pending, running, completed, failed, cancelled
+  trigger     String    @default("assignment") // assignment, automation, manual, routine
   input       String?                        // JSON input parameters
   output      String?                        // JSON output / result
   logs        String?                        // Execution logs
   error       String?                        // Error message if failed
+  stopReason  String?   @map("stop_reason")  // adapter's terminal reason, e.g. "adapter_failed"
+  exitCode    Int?      @map("exit_code")    // adapter process exit code
+  adapter     String?                        // adapter id that ran, after fallback
+  model       String?                        // model id the adapter reported using
   tokensUsed  Int       @default(0) @map("tokens_used")
+  inputTokens Int       @default(0) @map("input_tokens")
+  outputTokens Int      @default(0) @map("output_tokens")
+  cachedTokens Int      @default(0) @map("cached_tokens")
   cost        Float     @default(0)          // Estimated cost in USD
   duration    Int       @default(0)          // Duration in seconds
+  metadata    String?                        // JSON: raw adapter result, invocation details
   startedAt   DateTime? @map("started_at")
   completedAt DateTime? @map("completed_at")
   createdAt   DateTime  @default(now()) @map("created_at")
@@ -166,9 +175,13 @@ model AgentRun {
   projectId   String?   @map("project_id")
   project     Project?  @relation(fields: [projectId], references: [id], onDelete: SetNull)
 
+  agentId     String?   @map("agent_id")
+  agent       Agent?    @relation(fields: [agentId], references: [id], onDelete: SetNull)
+
   artifacts   Artifact[]
 
   @@index([agentType, status])
+  @@index([agentId, createdAt])
   @@map("agent_runs")
 }
 
@@ -367,8 +380,14 @@ model Agent {
   name       String                    // e.g., "Chief of Staff"
   type       String     @default("chief-of-staff") // chief-of-staff, spec-writer, code-writer, etc.
   role       String?                   // e.g., "orchestrator"
+  title      String?                   // e.g., "VP of Engineering"
+  instructions String?                 // Markdown system prompt shown on the Instructions tab
   skills     String?                   // JSON array of skill IDs
   config     String?                   // JSON config (temperature, maxTokens)
+  trustPreset String?    @default("standard") @map("trust_preset") // standard, restricted, elevated
+  canCreateAgents Boolean @default(false) @map("can_create_agents")
+  canManageSkills Boolean @default(false) @map("can_manage_skills")
+  canAssignTasks  Boolean @default(false) @map("can_assign_tasks")
   isActive   Boolean    @default(true) @map("is_active")
   createdAt  DateTime   @default(now()) @map("created_at")
   updatedAt  DateTime   @updatedAt     @map("updated_at")
@@ -379,7 +398,33 @@ model Agent {
   adapterId  String?    @map("adapter_id")
   adapter    Adapter?   @relation(fields: [adapterId], references: [id])
 
+  managerId  String?    @map("manager_id")
+  manager    Agent?     @relation("AgentReports", fields: [managerId], references: [id], onDelete: SetNull)
+  reports    Agent[]    @relation("AgentReports")
+
+  runs       AgentRun[]
+  budgets    Budget[]
+  revisions  AgentConfigRevision[]
+
   @@map("agents")
+}
+
+// ─── Agent Config Revisions (audit trail for the Configuration tab) ──
+
+model AgentConfigRevision {
+  id         String   @id @default(uuid())
+  kind       String   @default("config") // config, instructions, permissions
+  summary    String?                     // human note, e.g. "model -> claude-sonnet-4-6"
+  snapshot   String                      // JSON of the saved config/instructions
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  agentId    String   @map("agent_id")
+  agent      Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  createdBy  String?  @map("created_by")  // userId that saved it
+
+  @@index([agentId, createdAt])
+  @@map("agent_config_revisions")
 }
 
 // ─── Adapters (Claude Code CLI, Codex, etc.) ──────────────────────
@@ -485,10 +530,15 @@ model CostLedger {
   currency    String   @default("USD")
   description String?
   category    String   @default("inference") // inference, api, storage, compute
+  inputTokens Int      @default(0) @map("input_tokens")
+  outputTokens Int     @default(0) @map("output_tokens")
+  cachedTokens Int     @default(0) @map("cached_tokens")
   referenceId String?  @map("reference_id")  // agent_run_id, task_id, etc.
   referenceType String? @map("reference_type") // agent_run, task, routine
+  agentId     String?  @map("agent_id")       // which agent spent it, when known
   createdAt   DateTime @default(now()) @map("created_at")
 
+  @@index([agentId, createdAt])
   @@map("cost_ledger")
 }
 
@@ -506,6 +556,10 @@ model Budget {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt     @map("updated_at")
 
+  agentId   String?  @map("agent_id")   // null = instance-wide budget
+  agent     Agent?   @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  @@index([agentId])
   @@map("budgets")
 }
 

@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { PrismaClient } from '@prisma/client';
-import { authenticate } from '../middleware/auth';
+import { authenticate, AuthRequest } from '../middleware/auth';
 import { logger } from '../utils/logger';
 
 const prisma = new PrismaClient();
@@ -9,7 +9,7 @@ export const onboardingRoutes = Router();
 // GET /api/onboarding/session — Get current onboarding session state
 onboardingRoutes.get('/session', authenticate, async (req, res) => {
   try {
-    const userId = (req as any).user?.id;
+    const userId = (req as AuthRequest).userId!;
     let session = await prisma.onboardingSession.findUnique({ where: { userId } });
     if (!session) {
       session = await prisma.onboardingSession.create({
@@ -28,7 +28,7 @@ onboardingRoutes.post('/company', authenticate, async (req, res) => {
     const { companyName } = req.body;
     if (!companyName) return res.status(400).json({ error: 'Company name is required' });
 
-    const userId = (req as any).user?.id;
+    const userId = (req as AuthRequest).userId!;
 
     // Check if company already exists
     const existing = await prisma.company.findUnique({ where: { name: companyName } });
@@ -65,7 +65,7 @@ onboardingRoutes.post('/mission', authenticate, async (req, res) => {
     const { mission, mode } = req.body;
     if (!mission) return res.status(400).json({ error: 'Mission is required' });
 
-    const userId = (req as any).user?.id;
+    const userId = (req as AuthRequest).userId!;
 
     const session = await prisma.onboardingSession.findUnique({ where: { userId } });
     if (!session?.companyName) return res.status(400).json({ error: 'No company in progress' });
@@ -91,7 +91,7 @@ onboardingRoutes.post('/agent', authenticate, async (req, res) => {
   try {
     const { agentName } = req.body;
     const name = agentName || 'Chief of Staff';
-    const userId = (req as any).user?.id;
+    const userId = (req as AuthRequest).userId!;
 
     const session = await prisma.onboardingSession.findUnique({ where: { userId } });
     if (!session?.companyName) return res.status(400).json({ error: 'No company in progress' });
@@ -132,7 +132,7 @@ onboardingRoutes.post('/adapter', authenticate, async (req, res) => {
     const { adapterId, model } = req.body;
     if (!adapterId) return res.status(400).json({ error: 'Adapter ID is required' });
 
-    const userId = (req as any).user?.id;
+    const userId = (req as AuthRequest).userId!;
     const session = await prisma.onboardingSession.findUnique({ where: { userId } });
     if (!session?.companyName) return res.status(400).json({ error: 'No company in progress' });
 
@@ -168,7 +168,7 @@ onboardingRoutes.post('/adapter', authenticate, async (req, res) => {
 // POST /api/onboarding/review — Step 5: Complete onboarding
 onboardingRoutes.post('/review', authenticate, async (req, res) => {
   try {
-    const userId = (req as any).user?.id;
+    const userId = (req as AuthRequest).userId!;
     const session = await prisma.onboardingSession.findUnique({ where: { userId } });
     if (!session) return res.status(400).json({ error: 'No onboarding session' });
 
@@ -226,7 +226,7 @@ onboardingRoutes.post('/review', authenticate, async (req, res) => {
 // GET /api/onboarding/status — Check if onboarding is complete
 onboardingRoutes.get('/status', authenticate, async (req, res) => {
   try {
-    const userId = (req as any).user?.id;
+    const userId = (req as AuthRequest).userId!;
     const session = await prisma.onboardingSession.findUnique({ where: { userId } });
     res.json({
       completed: session?.completed ?? false,

@@ -58,6 +58,17 @@ export const initWebSocket = (server: HttpServer): Server => {
       logger.info(`User ${socket.userId} left project room: ${projectId}`);
     });
 
+    // Agent rooms are independent of the project room — the agent detail page
+    // watches one agent while the board may be watching a different project.
+    socket.on('join_agent', (agentId: string) => {
+      socket.join(`agent_${agentId}`);
+      logger.info(`User ${socket.userId} joined agent room: ${agentId}`);
+    });
+
+    socket.on('leave_agent', (agentId: string) => {
+      socket.leave(`agent_${agentId}`);
+    });
+
     socket.on('disconnect', () => {
       logger.info(`Client disconnected: ${socket.id}`);
     });
@@ -101,4 +112,20 @@ export const emitActivityLog = (projectId: string, activity: any) => {
 
 export const emitAgentStatus = (projectId: string, status: any) => {
   emitToProject(projectId, 'agent:status', status);
+};
+
+/** Emit to a single agent's room, skipping when no socket server is running. */
+const emitToAgent = (agentId: string, event: string, payload: unknown): void => {
+  if (!hasIO()) return;
+  io.to(`agent_${agentId}`).emit(event, payload);
+};
+
+/** A run for this agent started, changed status, or finished. */
+export const emitAgentRunUpdated = (agentId: string, payload: any) => {
+  emitToAgent(agentId, 'agent:run_updated', payload);
+};
+
+/** The agent's own record changed — instructions, config, skills, identity. */
+export const emitAgentUpdated = (agentId: string, payload: any) => {
+  emitToAgent(agentId, 'agent:updated', payload);
 };

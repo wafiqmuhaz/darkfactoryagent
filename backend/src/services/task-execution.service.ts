@@ -4,6 +4,8 @@ import { logger } from '../utils/logger';
 import { config } from '../config';
 import { taskService, TaskStatus } from './task.service';
 import { activityService } from './activity.service';
+import { agentService, RunTrigger } from './agent.service';
+import { emitAgentRunUpdated } from '../websocket/socket';
 
 const prisma = new PrismaClient();
 
@@ -29,6 +31,8 @@ export class TaskExecutionService {
 
     const adapterId = task.project.adapterType || config.agents.adapterDefault;
     const model = task.project.adapterModel || 'auto';
+    // Attribute the run to a roster agent so it shows up on that agent's tabs.
+    const owningAgentId = await agentService.resolveOwningAgent(adapterId, task.projectId);
 
     // Refuse to spend when the active budget is already exhausted.
     const budgetBlock = await this.checkBudget();
@@ -48,12 +52,20 @@ export class TaskExecutionService {
       data: {
         agentType: adapterId,
         status: 'running',
+        trigger: RunTrigger.ASSIGNMENT,
+        adapter: adapterId,
+        model,
         input: JSON.stringify({ title: task.title, description: task.description, model }),
         taskId: task.id,
         projectId: task.projectId,
+        agentId: owningAgentId,
         startedAt: new Date(),
       },
     });
+
+    if (owningAgentId) {
+      emitAgentRunUpdated(owningAgentId, { runId: run.id, status: 'running', taskId: task.id });
+    }
 
     await prisma.task.update({ where: { id: taskId }, data: { assignedAgent: adapterId } });
     await taskService.updateStatus(taskId, TaskStatus.IN_PROGRESS, `Running on ${adapterId} (${model})`);
@@ -68,7 +80,7 @@ export class TaskExecutionService {
 
     const result = await adapterManager.executeWithFallback(adapterId, {
       prompt: this.buildPrompt(task),
-      systemPrompt: this.buildSystemPrompt(task.project.name, task.project.path),
+      systemPrompt: await this.buildSystemPromptFor(owningAgentId, task.project.name, task.project.path),
       model,
       cwd: task.project.path,
       allowWrites: true,
@@ -78,14 +90,30 @@ export class TaskExecutionService {
     const durationSec = Math.round((result.durationMs ?? 0) / 1000);
 
     if (result.success) {
+      const inputTokens = result.tokenUsage?.input ?? 0;
+      const outputTokens = result.tokenUsage?.output ?? 0;
+
       await prisma.agentRun.update({
         where: { id: run.id },
         data: {
           status: 'completed',
           output: result.output.slice(0, 100000),
-          tokensUsed: (result.tokenUsage?.input ?? 0) + (result.tokenUsage?.output ?? 0),
+          adapter: result.adapterUsed,
+          inputTokens,
+          outputTokens,
+          tokensUsed: inputTokens + outputTokens,
           cost: result.cost ?? 0,
           duration: durationSec,
+          // Kept verbatim so the Runs tab can show the adapter's own result JSON.
+          metadata: JSON.stringify({
+            adapterUsed: result.adapterUsed,
+            fellBack: result.fellBack,
+            runtime: result.runtime ?? null,
+            model,
+            durationMs: result.durationMs ?? null,
+            tokenUsage: result.tokenUsage ?? null,
+            costUsd: result.cost ?? 0,
+          }),
           completedAt: new Date(),
         },
       });
@@ -96,8 +124,11 @@ export class TaskExecutionService {
             amount: result.cost,
             category: 'inference',
             description: `${result.adapterUsed} — ${task.title}`,
+            inputTokens,
+            outputTokens,
             referenceId: run.id,
             referenceType: 'agent_run',
+            agentId: owningAgentId,
           },
         });
       }
@@ -133,6 +164,10 @@ export class TaskExecutionService {
       });
       logger.info(`Task ${taskId} completed via ${result.adapterUsed}${note}`);
 
+      if (owningAgentId) {
+        emitAgentRunUpdated(owningAgentId, { runId: run.id, status: 'completed', taskId: task.id });
+      }
+
       return { success: true, output: result.output, adapterUsed: result.adapterUsed };
     }
 
@@ -141,7 +176,15 @@ export class TaskExecutionService {
       data: {
         status: 'failed',
         error: result.error?.slice(0, 4000),
+        adapter: result.adapterUsed,
         duration: durationSec,
+        metadata: JSON.stringify({
+          adapterUsed: result.adapterUsed,
+          runtime: result.runtime ?? null,
+          model,
+          durationMs: result.durationMs ?? null,
+          error: result.error ?? null,
+        }),
         completedAt: new Date(),
       },
     });
@@ -157,7 +200,31 @@ export class TaskExecutionService {
     });
     logger.error(`Task ${taskId} failed: ${result.error}`);
 
+    if (owningAgentId) {
+      emitAgentRunUpdated(owningAgentId, { runId: run.id, status: 'failed', taskId: task.id });
+    }
+
     return { success: false, output: result.output, error: result.error };
+  }
+
+  /**
+   * Compose the run's system prompt. The owning agent's saved instructions lead,
+   * so what the Instructions tab shows is what the next run actually gets.
+   */
+  private async buildSystemPromptFor(
+    agentId: string | null,
+    projectName: string,
+    projectPath: string
+  ): Promise<string> {
+    const base = this.buildSystemPrompt(projectName, projectPath);
+    if (!agentId) return base;
+
+    const agent = await prisma.agent.findUnique({
+      where: { id: agentId },
+      select: { instructions: true },
+    });
+    const instructions = agent?.instructions?.trim();
+    return instructions ? `${instructions}\n\n---\n\n${base}` : base;
   }
 
   private buildSystemPrompt(projectName: string, projectPath: string): string {

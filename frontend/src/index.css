@@ -43,8 +43,58 @@
 * {
   border-color: var(--color-border);
 }
+
 body {
   background-color: var(--color-background);
   color: var(--color-foreground);
   font-feature-settings: "rlig" 1, "calt" 1;
 }
+
+/*
+ * Chart tokens. Both modes are chosen deliberately — the dark column is the same
+ * hues re-stepped for the dark surface, not a filter over the light one. The
+ * categorical order is fixed (blue, orange, aqua, yellow); a chart never cycles
+ * or reassigns these by rank. Validated for lightness band, chroma, CVD
+ * separation, and contrast against each mode's own surface.
+ */
+:root {
+  --viz-series-1: #2a78d6; /* blue */
+  --viz-series-2: #eb6834; /* orange */
+  --viz-series-3: #1baf7a; /* aqua */
+  --viz-series-4: #eda100; /* yellow */
+
+  /* Ordinal blue ramp, light-end clears 2:1 on the light surface. */
+  --viz-ordinal-1: #6da7ec;
+  --viz-ordinal-2: #3987e5;
+  --viz-ordinal-3: #256abf;
+  --viz-ordinal-4: #104281;
+
+  --viz-good: #0ca30c;
+  --viz-warning: #fab219;
+  --viz-critical: #d03b3b;
+
+  --viz-grid: hsl(214.3 31.8% 91.4%);
+  --viz-axis: hsl(215.4 16.3% 80%);
+  --viz-muted-ink: hsl(215.4 16.3% 46.9%);
+}
+
+.dark {
+  --viz-series-1: #3987e5;
+  --viz-series-2: #d95926;
+  --viz-series-3: #199e70;
+  --viz-series-4: #c98500;
+
+  --viz-ordinal-1: #cde2fb;
+  --viz-ordinal-2: #86b6ef;
+  --viz-ordinal-3: #3987e5;
+  --viz-ordinal-4: #184f95;
+
+  --viz-good: #0ca30c;
+  --viz-warning: #fab219;
+  --viz-critical: #d03b3b;
+
+  --viz-grid: hsl(217.2 32.6% 17.5%);
+  --viz-axis: hsl(217.2 32.6% 26%);
+  --viz-muted-ink: hsl(215 20.2% 65.1%);
+}
+

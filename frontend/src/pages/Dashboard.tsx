@@ -71,7 +71,7 @@ export const Dashboard = () => {
 
   const { data: agent } = useQuery({
     queryKey: ['agent-status'],
-    queryFn: async () => (await apiClient.get('/agents')).data as AgentStatusPayload,
+    queryFn: async () => (await apiClient.get('/agents/status')).data as AgentStatusPayload,
   });
 
   // Live: any task or activity event refreshes the figures.

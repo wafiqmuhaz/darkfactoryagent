@@ -1,55 +1,28 @@
 import { useState } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { Link } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '../api/client';
+import { agentKeys, useAdapterStatus, useAgentRoster } from '../hooks/useAgents';
 import { Button } from '../components/common/Button';
 import { Spinner } from '../components/common/Spinner';
+import { StatusBadge } from '../components/agents/primitives';
 import {
   Cpu, CheckCircle, XCircle, Loader2, Terminal, Container,
-  RefreshCw, AlertCircle,
+  RefreshCw, AlertCircle, ChevronRight,
 } from 'lucide-react';
 import { formatRelativeTime } from '../utils/helpers';
 
-interface AgentStatusPayload {
-  adapter: {
-    id: string;
-    name: string;
-    description: string | null;
-    model: string;
-    status: 'running' | 'available' | 'unavailable';
-    available: boolean;
-    probeStatus: string;
-    probeError: string | null;
-    runtime: 'local' | 'docker' | 'none' | null;
-    version: string | null;
-    lastProbeAt: string | null;
-    installHint: string | null;
-  };
-  currentRun: { id: string; taskTitle: string | null; startedAt: string } | null;
-  lastRun: {
-    id: string;
-    status: string;
-    taskTitle: string | null;
-    durationSec: number;
-    costUsd: number;
-    error: string | null;
-    completedAt: string | null;
-  } | null;
-}
-
 /**
- * A single active adapter, not a roster of agent roles — execution always goes
- * through one adapter (Claude Code or Codex) chosen per project.
+ * Agents page: the company roster on top, then the single active adapter every
+ * task executes through. Each roster row opens that agent's detail tabs.
  */
 export const AgentStatus = () => {
   const queryClient = useQueryClient();
   const [probing, setProbing] = useState(false);
   const [probeMessage, setProbeMessage] = useState<{ ok: boolean; text: string } | null>(null);
 
-  const { data, isLoading } = useQuery({
-    queryKey: ['agent-status'],
-    queryFn: async () => (await apiClient.get('/agents')).data as AgentStatusPayload,
-    refetchInterval: 10000,
-  });
+  const { data, isLoading } = useAdapterStatus();
+  const { data: roster, isLoading: rosterLoading } = useAgentRoster();
 
   const handleProbe = async () => {
     if (!data) return;
@@ -58,7 +31,7 @@ export const AgentStatus = () => {
     try {
       const res = await apiClient.post('/adapters/probe', { adapterId: data.adapter.id });
       setProbeMessage({ ok: res.data.status === 'ready', text: res.data.message });
-      queryClient.invalidateQueries({ queryKey: ['agent-status'] });
+      queryClient.invalidateQueries({ queryKey: agentKeys.adapterStatus() });
     } catch (err: any) {
       setProbeMessage({ ok: false, text: err.response?.data?.message || err.message });
     } finally {
@@ -70,35 +43,21 @@ export const AgentStatus = () => {
     return <div className="flex h-full items-center justify-center"><Spinner size="lg" /></div>;
   }
 
-  if (!data) {
-    return (
-      <div className="text-center text-muted-foreground py-12">
-        <Cpu className="w-12 h-12 mx-auto mb-3 opacity-50" />
-        <p>Adapter status unavailable.</p>
-      </div>
-    );
-  }
-
-  const { adapter, currentRun, lastRun } = data;
-  const RuntimeIcon = adapter.runtime === 'docker' ? Container : Terminal;
-
-  const statusStyle =
-    adapter.status === 'running' ? 'bg-blue-500/10 text-blue-600 dark:text-blue-400'
-      : adapter.available ? 'bg-green-500/10 text-green-600 dark:text-green-400'
-      : 'bg-destructive/10 text-destructive';
-
   return (
     <div className="space-y-6 max-w-3xl">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold">Agent Status</h1>
+          <h1 className="text-2xl font-bold">Agents</h1>
           <p className="text-muted-foreground text-sm mt-1">
-            One adapter runs every task. Change it per project in the project's "Connect a model" step.
+            One adapter runs every task. Open an agent to review its runs, instructions, skills,
+            configuration, and budget.
           </p>
         </div>
-        <Button variant="outline" onClick={handleProbe} isLoading={probing}>
-          <RefreshCw className="w-4 h-4 mr-1" /> Test now
-        </Button>
+        {data && (
+          <Button variant="outline" onClick={handleProbe} isLoading={probing}>
+            <RefreshCw className="w-4 h-4 mr-1" /> Test now
+          </Button>
+        )}
       </div>
 
       {probeMessage && (
@@ -112,7 +71,82 @@ export const AgentStatus = () => {
         </div>
       )}
 
-      {/* Active adapter */}
+      {/* Company roster */}
+      <section>
+        <h2 className="text-sm font-semibold mb-2">Your agents</h2>
+
+        {rosterLoading ? (
+          <div className="flex justify-center py-8"><Spinner /></div>
+        ) : roster && roster.length > 0 ? (
+          <ul className="divide-y divide-border border border-border rounded-lg overflow-hidden">
+            {roster.map((agent) => (
+              <li key={agent.id}>
+                <Link
+                  to={`/agents/${agent.id}`}
+                  className="flex items-center gap-3 px-4 py-3 bg-background hover:bg-secondary/60 transition-colors"
+                >
+                  <div className="w-9 h-9 rounded-lg bg-primary/10 text-primary flex items-center justify-center shrink-0">
+                    <Cpu className={`w-4 h-4 ${agent.status === 'running' ? 'animate-pulse' : ''}`} />
+                  </div>
+
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-sm font-medium truncate">{agent.name}</span>
+                      <StatusBadge status={agent.status} />
+                    </div>
+                    <div className="text-xs text-muted-foreground truncate">
+                      {agent.title ?? agent.role ?? agent.type}
+                      {agent.adapter.name && ` · ${agent.adapter.name}`}
+                      {` · ${agent.model}`}
+                    </div>
+                    {agent.latestRun?.error && (
+                      <p className="text-xs text-destructive mt-0.5 line-clamp-1">
+                        {agent.latestRun.error}
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="text-right shrink-0 hidden sm:block">
+                    <div className="text-xs tabular-nums">
+                      {agent.runs.total} run{agent.runs.total === 1 ? '' : 's'}
+                      {agent.successRate !== null && ` · ${agent.successRate}%`}
+                    </div>
+                    <div className="text-xs text-muted-foreground tabular-nums">
+                      ${agent.totalSpendUsd.toFixed(4)}
+                    </div>
+                  </div>
+
+                  <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
+                </Link>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <div className="border border-border rounded-lg bg-background text-center py-8 text-muted-foreground">
+            <Cpu className="w-8 h-8 mx-auto mb-2 opacity-50" />
+            <p className="text-sm">No agents yet.</p>
+            <p className="text-xs mt-1">Complete onboarding to create your team lead.</p>
+          </div>
+        )}
+      </section>
+
+      {data && <AdapterPanel data={data} />}
+    </div>
+  );
+};
+
+/** The instance-wide adapter every run goes through. */
+const AdapterPanel = ({ data }: { data: NonNullable<ReturnType<typeof useAdapterStatus>['data']> }) => {
+  const { adapter, currentRun, lastRun } = data;
+  const RuntimeIcon = adapter.runtime === 'docker' ? Container : Terminal;
+
+  const statusStyle =
+    adapter.status === 'running' ? 'bg-blue-500/10 text-blue-600 dark:text-blue-400'
+      : adapter.available ? 'bg-green-500/10 text-green-600 dark:text-green-400'
+      : 'bg-destructive/10 text-destructive';
+
+  return (
+    <>
       <section className="bg-background border border-border rounded-lg p-6 shadow-sm">
         <div className="flex items-start justify-between mb-4">
           <div className="flex items-center gap-3">
@@ -171,7 +205,6 @@ export const AgentStatus = () => {
         )}
       </section>
 
-      {/* Current run */}
       {currentRun && (
         <section className="bg-background border border-blue-500/30 rounded-lg p-6 shadow-sm">
           <div className="flex items-center gap-2 mb-3">
@@ -185,7 +218,6 @@ export const AgentStatus = () => {
         </section>
       )}
 
-      {/* Last run */}
       {lastRun && (
         <section className="bg-background border border-border rounded-lg p-6 shadow-sm">
           <h2 className="font-semibold mb-3">Last run</h2>
@@ -206,6 +238,6 @@ export const AgentStatus = () => {
           </div>
         </section>
       )}
-    </div>
+    </>
   );
 };

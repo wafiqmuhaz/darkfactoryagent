@@ -8,6 +8,7 @@ import { Register } from './pages/Register';
 import { Dashboard } from './pages/Dashboard';
 import { Projects } from './pages/Projects';
 import { AgentStatus } from './pages/AgentStatus';
+import { AgentDetail } from './pages/AgentDetail';
 import { Skills } from './pages/Skills';
 import { Analytics } from './pages/Analytics';
 import { Settings } from './pages/Settings';
@@ -39,6 +40,7 @@ function App() {
             <Route path="/kanban" element={<ProtectedRoute><Layout><KanbanBoard /></Layout></ProtectedRoute>} />
             <Route path="/projects" element={<ProtectedRoute><Layout><Projects /></Layout></ProtectedRoute>} />
             <Route path="/agents" element={<ProtectedRoute><Layout><AgentStatus /></Layout></ProtectedRoute>} />
+            <Route path="/agents/:id" element={<ProtectedRoute><Layout><AgentDetail /></Layout></ProtectedRoute>} />
             <Route path="/skills" element={<ProtectedRoute><Layout><Skills /></Layout></ProtectedRoute>} />
             <Route path="/skills-store" element={<ProtectedRoute><Layout><SkillsStore /></Layout></ProtectedRoute>} />
             <Route path="/routines" element={<ProtectedRoute><Layout><Routines /></Layout></ProtectedRoute>} />

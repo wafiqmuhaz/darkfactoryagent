@@ -35,8 +35,22 @@ export function errorHandler(err: Error, _req: Request, res: Response, _next: Ne
     return;
   }
 
-  if (err.message === 'User not found' || err.message === 'Project not found' || err.message === 'Task not found') {
+  if (
+    err.message === 'User not found' ||
+    err.message === 'Project not found' ||
+    err.message === 'Task not found' ||
+    err.message === 'Agent not found' ||
+    err.message === 'Agent run not found' ||
+    err.message === 'Company not found' ||
+    err.message === 'Manager not found'
+  ) {
     res.status(404).json({ error: err.message });
+    return;
+  }
+
+  // Bad references the caller can fix by choosing a different value.
+  if (err.message === 'Agent cannot report to itself' || err.message.startsWith('Unknown skill: ')) {
+    res.status(400).json({ error: err.message });
     return;
   }
 
