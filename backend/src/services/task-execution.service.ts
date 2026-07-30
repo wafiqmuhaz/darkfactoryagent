@@ -2,7 +2,8 @@ import { PrismaClient } from '@prisma/client';
 import { adapterManager } from '../adapters/manager';
 import { logger } from '../utils/logger';
 import { config } from '../config';
-import { emitTaskUpdated } from '../websocket/socket';
+import { taskService, TaskStatus } from './task.service';
+import { activityService } from './activity.service';
 
 const prisma = new PrismaClient();
 
@@ -32,8 +33,14 @@ export class TaskExecutionService {
     // Refuse to spend when the active budget is already exhausted.
     const budgetBlock = await this.checkBudget();
     if (budgetBlock) {
-      await this.recordActivity('error', `Task "${task.title}" blocked: ${budgetBlock}`, task);
-      await prisma.task.update({ where: { id: taskId }, data: { status: 'failed' } });
+      await activityService.log({
+        type: 'task_failed',
+        message: `Task "${task.title}" blocked: ${budgetBlock}`,
+        metadata: { reason: 'budget_exhausted' },
+        taskId: task.id,
+        projectId: task.projectId,
+      });
+      await taskService.updateStatus(taskId, TaskStatus.FAILED, `Blocked: ${budgetBlock}`);
       return { success: false, output: '', error: budgetBlock };
     }
 
@@ -48,11 +55,16 @@ export class TaskExecutionService {
       },
     });
 
-    await prisma.task.update({
-      where: { id: taskId },
-      data: { status: 'in_progress', startedAt: new Date(), assignedAgent: adapterId },
+    await prisma.task.update({ where: { id: taskId }, data: { assignedAgent: adapterId } });
+    await taskService.updateStatus(taskId, TaskStatus.IN_PROGRESS, `Running on ${adapterId} (${model})`);
+
+    await activityService.log({
+      type: 'agent_run',
+      message: `Started "${task.title}" on ${adapterId}`,
+      metadata: { adapter: adapterId, model, agentRunId: run.id },
+      taskId: task.id,
+      projectId: task.projectId,
     });
-    await this.recordActivity('agent_run', `Started "${task.title}" on ${adapterId}`, task);
 
     const result = await adapterManager.executeWithFallback(adapterId, {
       prompt: this.buildPrompt(task),
@@ -102,18 +114,23 @@ export class TaskExecutionService {
         },
       });
 
-      const updated = await prisma.task.update({
-        where: { id: taskId },
-        data: { status: 'review', completedAt: new Date() },
-      });
-      emitTaskUpdated(updated.projectId, updated);
-
       const note = result.fellBack ? ` (fell back to ${result.adapterUsed})` : '';
-      await this.recordActivity(
-        'agent_run',
-        `Completed "${task.title}" via ${result.adapterUsed}${note} in ${durationSec}s`,
-        task
-      );
+      await taskService.updateStatus(taskId, TaskStatus.REVIEW, `Completed via ${result.adapterUsed}${note}`);
+
+      await activityService.log({
+        type: 'task_success',
+        message: result.output.slice(0, 500) || `Completed "${task.title}" in ${durationSec}s`,
+        metadata: {
+          adapter: result.adapterUsed,
+          fellBack: result.fellBack,
+          durationSec,
+          costUsd: result.cost ?? 0,
+          tokens: result.tokenUsage,
+          agentRunId: run.id,
+        },
+        taskId: task.id,
+        projectId: task.projectId,
+      });
       logger.info(`Task ${taskId} completed via ${result.adapterUsed}${note}`);
 
       return { success: true, output: result.output, adapterUsed: result.adapterUsed };
@@ -129,9 +146,15 @@ export class TaskExecutionService {
       },
     });
 
-    const failed = await prisma.task.update({ where: { id: taskId }, data: { status: 'failed' } });
-    emitTaskUpdated(failed.projectId, failed);
-    await this.recordActivity('error', `Task "${task.title}" failed: ${result.error}`, task);
+    await taskService.updateStatus(taskId, TaskStatus.FAILED, `Failed on ${adapterId}`);
+
+    await activityService.log({
+      type: 'task_failed',
+      message: result.error ?? `Task "${task.title}" failed`,
+      metadata: { adapter: adapterId, durationSec, agentRunId: run.id, error: result.error },
+      taskId: task.id,
+      projectId: task.projectId,
+    });
     logger.error(`Task ${taskId} failed: ${result.error}`);
 
     return { success: false, output: result.output, error: result.error };
@@ -172,20 +195,6 @@ export class TaskExecutionService {
       return `budget limit reached ($${spent.toFixed(2)} of $${budget.amount.toFixed(2)})`;
     }
     return null;
-  }
-
-  private async recordActivity(
-    type: string,
-    message: string,
-    task: { id: string; projectId: string }
-  ): Promise<void> {
-    try {
-      await prisma.activity.create({
-        data: { type, message, taskId: task.id, projectId: task.projectId },
-      });
-    } catch {
-      // activity logging is best-effort
-    }
   }
 }
 

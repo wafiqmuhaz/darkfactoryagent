@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { apiClient } from '../api/client';
 import { Spinner } from '../components/common/Spinner';
 import { Activity as ActivityIcon, Filter, RefreshCw, Cpu, CheckCircle, AlertCircle, Clock, Timer, Puzzle, Plug } from 'lucide-react';
@@ -39,11 +39,6 @@ export const Activity = () => {
   const [typeFilter, setTypeFilter] = useState('all');
   const [types, setTypes] = useState<string[]>([]);
 
-  useEffect(() => {
-    loadTypes();
-    loadActivities();
-  }, []);
-
   const loadTypes = async () => {
     try {
       const res = await apiClient.get('/activities/types');
@@ -53,7 +48,7 @@ export const Activity = () => {
     }
   };
 
-  const loadActivities = async () => {
+  const loadActivities = useCallback(async () => {
     setIsLoading(true);
     try {
       const params: any = {};
@@ -65,7 +60,16 @@ export const Activity = () => {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [typeFilter]);
+
+  useEffect(() => {
+    loadTypes();
+  }, []);
+
+  // Re-fetch whenever the filter changes.
+  useEffect(() => {
+    loadActivities();
+  }, [loadActivities]);
 
   const getTypeIcon = (type: string) => {
     const Icon = typeIcons[type] || ActivityIcon;

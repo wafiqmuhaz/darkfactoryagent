@@ -3,6 +3,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { logger } from '../utils/logger';
+import { adapterEnvOverrides } from './container-env';
 
 export type ProbeStatus = 'ready' | 'error' | 'not_tested';
 export type RuntimeLocation = 'local' | 'docker' | 'none';
@@ -142,12 +143,17 @@ export abstract class BaseAdapter {
 
     const command = this.wrapForRuntime(inner, detected, task.cwd);
 
+    // Inside a container, CLI configs pointing at loopback need rewriting to the
+    // host gateway; on a host this is an empty object.
+    const envOverrides = adapterEnvOverrides();
+
     try {
       return execSync(command, {
         encoding: 'utf8',
         timeout: task.timeout ?? 300000,
         maxBuffer: 32 * 1024 * 1024,
         cwd: detected.runtime === 'local' ? task.cwd : undefined,
+        env: Object.keys(envOverrides).length ? { ...process.env, ...envOverrides } : process.env,
         stdio: ['ignore', 'pipe', 'pipe'],
       });
     } finally {
@@ -264,6 +270,19 @@ export abstract class BaseAdapter {
         output: '',
         runtime: 'none',
         error: `${this.displayName} not available. ${this.installHint}`,
+        durationMs: Date.now() - started,
+      };
+    }
+
+    // A missing cwd otherwise surfaces as `spawnSync /bin/sh ENOENT`, which says
+    // nothing about the actual problem. In Docker this usually means the project
+    // path is not mounted into the container that picked up the job.
+    if (task.cwd && detected.runtime === 'local' && !fs.existsSync(task.cwd)) {
+      return {
+        success: false,
+        output: '',
+        runtime: detected.runtime,
+        error: `Working directory not found: ${task.cwd}. In Docker mode the project path must be mounted into every backend container.`,
         durationMs: Date.now() - started,
       };
     }

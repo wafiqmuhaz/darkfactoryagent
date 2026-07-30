@@ -23,7 +23,8 @@ export function errorHandler(err: Error, _req: Request, res: Response, _next: Ne
   // Business logic errors
   if (
     err.message === 'Email already registered' ||
-    err.message === 'Username already taken'
+    err.message === 'Username already taken' ||
+    err.message === 'User already has a project'
   ) {
     res.status(409).json({ error: err.message });
     return;
@@ -34,8 +35,14 @@ export function errorHandler(err: Error, _req: Request, res: Response, _next: Ne
     return;
   }
 
-  if (err.message === 'User not found') {
+  if (err.message === 'User not found' || err.message === 'Project not found' || err.message === 'Task not found') {
     res.status(404).json({ error: err.message });
+    return;
+  }
+
+  // Path validation failures are the caller's input problem, not a server fault.
+  if (err.message.startsWith('Project path does not exist')) {
+    res.status(400).json({ error: err.message });
     return;
   }
 

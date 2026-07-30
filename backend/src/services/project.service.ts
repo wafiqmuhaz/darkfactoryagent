@@ -20,6 +20,13 @@ export interface CreateProjectInput {
 
 export class ProjectService {
   async create(input: CreateProjectInput) {
+    // One project per user. Enforced here rather than by a unique constraint so
+    // the caller gets an actionable message instead of a Prisma error.
+    const existing = await prisma.project.findFirst({ where: { ownerId: input.ownerId } });
+    if (existing) {
+      throw new Error('User already has a project');
+    }
+
     // Validate the project path exists
     const resolvedPath = path.resolve(input.path);
     if (!fs.existsSync(resolvedPath)) {
@@ -107,8 +114,14 @@ export class ProjectService {
       throw new Error('Project not found');
     }
 
+    // Tasks, routines, artifacts and the company link cascade via the schema.
+    // Activity rows reference projectId as a plain column with no foreign key,
+    // so they would otherwise be left behind as orphans.
+    await prisma.activity.deleteMany({ where: { projectId: id } });
     await prisma.project.delete({ where: { id } });
+
     logger.info(`Project deleted: ${project.name}`, { projectId: id });
+    return { id, name: project.name };
   }
 }
 

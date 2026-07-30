@@ -3,10 +3,14 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '../api/client';
 import { useProjectStore } from '../store';
 import type { ProjectState } from '../store';
+import { useProjectSocket } from '../hooks/useProjectSocket';
 import { Button } from '../components/common/Button';
 import { Modal } from '../components/common/Modal';
 import { Spinner } from '../components/common/Spinner';
-import { Plus, Play, Trash2, AlertCircle, Loader2, Folder } from 'lucide-react';
+import {
+  Plus, Play, Trash2, AlertCircle, Loader2, Folder,
+  ChevronDown, ChevronRight, Wifi, WifiOff,
+} from 'lucide-react';
 
 interface Task {
   id: string;
@@ -19,6 +23,14 @@ interface Task {
   createdAt: string;
 }
 
+interface ActivityEntry {
+  id: string;
+  type: string;
+  message: string;
+  metadata?: string | null;
+  createdAt: string;
+}
+
 interface Project {
   id: string;
   name: string;
@@ -26,7 +38,7 @@ interface Project {
   adapterModel?: string;
 }
 
-/** Board columns, mapped to the status values the backend stores. */
+/** Board columns mapped to the status strings the backend stores. */
 const COLUMNS: { status: string; label: string }[] = [
   { status: 'backlog', label: 'Backlog' },
   { status: 'todo', label: 'To Do' },
@@ -43,9 +55,16 @@ const PRIORITY_STYLES: Record<string, string> = {
   low: 'bg-secondary text-muted-foreground',
 };
 
+const LOG_STYLES: Record<string, string> = {
+  task_failed: 'text-destructive',
+  error: 'text-destructive',
+  task_success: 'text-green-600 dark:text-green-400',
+  agent_run: 'text-blue-600 dark:text-blue-400',
+};
+
 export const KanbanBoard = () => {
-  const currentProjectId = useProjectStore((state: ProjectState) => state.currentProjectId);
-  const setCurrentProject = useProjectStore((state: ProjectState) => state.setCurrentProject);
+  const currentProjectId = useProjectStore((s: ProjectState) => s.currentProjectId);
+  const setCurrentProject = useProjectStore((s: ProjectState) => s.setCurrentProject);
   const queryClient = useQueryClient();
 
   const [isCreateOpen, setIsCreateOpen] = useState(false);
@@ -53,6 +72,8 @@ export const KanbanBoard = () => {
   const [draggedTask, setDraggedTask] = useState<string | null>(null);
   const [dragOverColumn, setDragOverColumn] = useState<string | null>(null);
   const [runningTask, setRunningTask] = useState<string | null>(null);
+  const [expandedLogs, setExpandedLogs] = useState<Set<string>>(new Set());
+  const [live, setLive] = useState(false);
 
   const [form, setForm] = useState({
     title: '',
@@ -64,10 +85,7 @@ export const KanbanBoard = () => {
 
   const { data: projects = [] } = useQuery({
     queryKey: ['projects'],
-    queryFn: async () => {
-      const res = await apiClient.get('/projects');
-      return res.data as Project[];
-    },
+    queryFn: async () => (await apiClient.get('/projects')).data as Project[],
   });
 
   const activeProject = projects.find((p) => p.id === currentProjectId);
@@ -76,28 +94,51 @@ export const KanbanBoard = () => {
     queryKey: ['tasks', currentProjectId],
     queryFn: async () => {
       if (!currentProjectId) return [];
-      const res = await apiClient.get(`/tasks?projectId=${currentProjectId}`);
-      return res.data as Task[];
+      return (await apiClient.get(`/tasks?projectId=${currentProjectId}`)).data as Task[];
     },
     enabled: !!currentProjectId,
-    // Tasks run asynchronously through the adapter CLI, so keep the board fresh.
-    refetchInterval: 5000,
   });
 
+  const { data: logsByTask = {} } = useQuery({
+    queryKey: ['task-logs', currentProjectId],
+    queryFn: async () => {
+      if (!currentProjectId) return {};
+      return (await apiClient.get(`/tasks/logs?projectId=${currentProjectId}`))
+        .data as Record<string, ActivityEntry[]>;
+    },
+    enabled: !!currentProjectId,
+  });
+
+  // Live updates replace polling: the worker emits on every status change.
+  const refreshBoard = () => {
+    queryClient.invalidateQueries({ queryKey: ['tasks', currentProjectId] });
+    queryClient.invalidateQueries({ queryKey: ['task-logs', currentProjectId] });
+  };
+
+  const socketRef = useProjectSocket(currentProjectId, {
+    onTaskCreated: refreshBoard,
+    onTaskUpdated: refreshBoard,
+    onTaskDeleted: refreshBoard,
+    onActivityLog: () =>
+      queryClient.invalidateQueries({ queryKey: ['task-logs', currentProjectId] }),
+  });
+
+  // Reflect connection state so a silent board is distinguishable from a live one.
+  const socket = socketRef.current;
+  if (socket && socket.connected !== live) setLive(socket.connected);
+
   const createTask = useMutation({
-    mutationFn: async () => {
-      const res = await apiClient.post('/tasks', {
+    mutationFn: async () =>
+      (await apiClient.post('/tasks', {
         title: form.title,
         description: form.description || undefined,
         priority: form.priority,
         type: form.type,
         projectId: currentProjectId,
         autoRun: form.autoRun,
-      });
-      return res.data;
-    },
+      })).data,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['tasks', currentProjectId] });
+      refreshBoard();
       setIsCreateOpen(false);
       setError(null);
       setForm({ title: '', description: '', priority: 'medium', type: 'feature', autoRun: true });
@@ -106,17 +147,15 @@ export const KanbanBoard = () => {
   });
 
   const updateStatus = useMutation({
-    mutationFn: async ({ id, status }: { id: string; status: string }) => {
-      const res = await apiClient.patch(`/tasks/${id}/status`, { status });
-      return res.data;
-    },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['tasks', currentProjectId] }),
+    mutationFn: async ({ id, status }: { id: string; status: string }) =>
+      (await apiClient.patch(`/tasks/${id}/status`, { status })).data,
+    onSuccess: refreshBoard,
     onError: (err: any) => setError(err.response?.data?.error || 'Failed to move task'),
   });
 
   const deleteTask = useMutation({
     mutationFn: async (id: string) => { await apiClient.delete(`/tasks/${id}`); },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['tasks', currentProjectId] }),
+    onSuccess: refreshBoard,
   });
 
   const runTask = async (id: string) => {
@@ -124,13 +163,25 @@ export const KanbanBoard = () => {
     setError(null);
     try {
       const res = await apiClient.post(`/tasks/${id}/run`);
-      if (!res.data.success) setError(res.data.error || 'Task execution failed');
+      // 202 means queued; the worker drives it from here via socket events.
+      if (res.data.queued === false && res.data.success === false) {
+        setError(res.data.error || 'Task execution failed');
+      }
     } catch (err: any) {
       setError(err.response?.data?.error || err.message || 'Task execution failed');
     } finally {
       setRunningTask(null);
-      queryClient.invalidateQueries({ queryKey: ['tasks', currentProjectId] });
+      refreshBoard();
     }
+  };
+
+  const toggleLogs = (taskId: string) => {
+    setExpandedLogs((prev) => {
+      const next = new Set(prev);
+      if (next.has(taskId)) next.delete(taskId);
+      else next.add(taskId);
+      return next;
+    });
   };
 
   const handleDrop = (status: string) => {
@@ -138,12 +189,9 @@ export const KanbanBoard = () => {
     if (!draggedTask) return;
     const task = tasks.find((t) => t.id === draggedTask);
     setDraggedTask(null);
-    if (task && task.status !== status) {
-      updateStatus.mutate({ id: draggedTask, status });
-    }
+    if (task && task.status !== status) updateStatus.mutate({ id: draggedTask, status });
   };
 
-  // No project selected yet — offer a picker instead of a dead end.
   if (!currentProjectId) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-4 text-center">
@@ -165,7 +213,7 @@ export const KanbanBoard = () => {
             ))}
           </div>
         ) : (
-          <p className="text-sm text-muted-foreground">No projects yet — create one on the Projects page first.</p>
+          <p className="text-sm text-muted-foreground">No project yet — create one on the Projects page first.</p>
         )}
       </div>
     );
@@ -173,10 +221,20 @@ export const KanbanBoard = () => {
 
   return (
     <div className="flex flex-col h-full gap-4">
-      {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold">Task Board</h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl font-bold">Task Board</h1>
+            <span
+              className={`flex items-center gap-1 text-xs px-1.5 py-0.5 rounded-full ${
+                live ? 'text-green-600 dark:text-green-400 bg-green-500/10' : 'text-muted-foreground bg-secondary'
+              }`}
+              title={live ? 'Receiving live updates' : 'Not connected — refresh to see changes'}
+            >
+              {live ? <Wifi className="w-3 h-3" /> : <WifiOff className="w-3 h-3" />}
+              {live ? 'Live' : 'Offline'}
+            </span>
+          </div>
           <p className="text-muted-foreground text-sm mt-1">
             {activeProject?.name}
             {activeProject?.adapterType && (
@@ -187,15 +245,15 @@ export const KanbanBoard = () => {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <select
-            value={currentProjectId}
-            onChange={(e) => setCurrentProject(e.target.value)}
-            className="px-3 py-2 rounded-md border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-          >
-            {projects.map((p) => (
-              <option key={p.id} value={p.id}>{p.name}</option>
-            ))}
-          </select>
+          {projects.length > 1 && (
+            <select
+              value={currentProjectId}
+              onChange={(e) => setCurrentProject(e.target.value)}
+              className="px-3 py-2 rounded-md border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+            >
+              {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
+          )}
           <Button onClick={() => setIsCreateOpen(true)}>
             <Plus className="w-4 h-4 mr-1" /> New Task
           </Button>
@@ -224,7 +282,7 @@ export const KanbanBoard = () => {
                 onDragOver={(e) => { e.preventDefault(); setDragOverColumn(column.status); }}
                 onDragLeave={() => setDragOverColumn(null)}
                 onDrop={() => handleDrop(column.status)}
-                className={`flex flex-col w-72 shrink-0 rounded-lg p-3 transition-colors ${
+                className={`flex flex-col w-80 shrink-0 rounded-lg p-3 transition-colors ${
                   isDragTarget ? 'bg-primary/10 ring-2 ring-primary/30' : 'bg-secondary/50'
                 }`}
               >
@@ -236,49 +294,104 @@ export const KanbanBoard = () => {
                 </div>
 
                 <div className="flex-1 overflow-y-auto space-y-2">
-                  {columnTasks.map((task) => (
-                    <div
-                      key={task.id}
-                      draggable
-                      onDragStart={() => setDraggedTask(task.id)}
-                      onDragEnd={() => { setDraggedTask(null); setDragOverColumn(null); }}
-                      className={`group bg-background border border-border p-3 rounded shadow-sm hover:border-primary/50 cursor-grab active:cursor-grabbing transition-all ${
-                        draggedTask === task.id ? 'opacity-40' : ''
-                      }`}
-                    >
-                      <div className="text-sm font-medium mb-1">{task.title}</div>
-                      {task.description && (
-                        <p className="text-xs text-muted-foreground line-clamp-2 mb-2">{task.description}</p>
-                      )}
-                      <div className="flex items-center justify-between mt-2">
-                        <span className={`text-[11px] px-1.5 py-0.5 rounded capitalize ${PRIORITY_STYLES[task.priority] ?? PRIORITY_STYLES.medium}`}>
-                          {task.priority}
-                        </span>
-                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <button
-                            onClick={() => runTask(task.id)}
-                            disabled={runningTask === task.id}
-                            title="Run through adapter CLI"
-                            className="p-1 rounded hover:bg-secondary text-muted-foreground disabled:opacity-50"
-                          >
-                            {runningTask === task.id
-                              ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                              : <Play className="w-3.5 h-3.5" />}
-                          </button>
-                          <button
-                            onClick={() => deleteTask.mutate(task.id)}
-                            title="Delete task"
-                            className="p-1 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
+                  {columnTasks.map((task) => {
+                    const logs = logsByTask[task.id] ?? [];
+                    const isExpanded = expandedLogs.has(task.id);
+                    const latestFailure = logs.find((l) => l.type === 'task_failed' || l.type === 'error');
+
+                    return (
+                      <div
+                        key={task.id}
+                        draggable
+                        onDragStart={() => setDraggedTask(task.id)}
+                        onDragEnd={() => { setDraggedTask(null); setDragOverColumn(null); }}
+                        className={`group bg-background border border-border p-3 rounded shadow-sm hover:border-primary/50 transition-all ${
+                          draggedTask === task.id ? 'opacity-40' : ''
+                        }`}
+                      >
+                        <div className="flex items-start gap-2 cursor-grab active:cursor-grabbing">
+                          <div className="flex-1 min-w-0">
+                            <div className="text-sm font-medium">{task.title}</div>
+                            {task.description && (
+                              <p className="text-xs text-muted-foreground line-clamp-2 mt-0.5">{task.description}</p>
+                            )}
+                          </div>
+                          {task.status === 'in_progress' && (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin text-primary shrink-0 mt-0.5" />
+                          )}
                         </div>
+
+                        {/* Surface the adapter error inline — the reason a task failed
+                            matters more than the fact that it did. */}
+                        {latestFailure && (
+                          <div className="mt-2 p-2 rounded bg-destructive/5 border border-destructive/20 text-xs text-destructive line-clamp-3">
+                            {latestFailure.message}
+                          </div>
+                        )}
+
+                        <div className="flex items-center justify-between mt-2">
+                          <div className="flex items-center gap-2">
+                            <span className={`text-[11px] px-1.5 py-0.5 rounded capitalize ${PRIORITY_STYLES[task.priority] ?? PRIORITY_STYLES.medium}`}>
+                              {task.priority}
+                            </span>
+                            {logs.length > 0 && (
+                              <button
+                                onClick={() => toggleLogs(task.id)}
+                                className="flex items-center gap-0.5 text-[11px] text-muted-foreground hover:text-foreground"
+                              >
+                                {isExpanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+                                {logs.length} log{logs.length === 1 ? '' : 's'}
+                              </button>
+                            )}
+                          </div>
+
+                          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <button
+                              onClick={() => runTask(task.id)}
+                              disabled={runningTask === task.id || task.status === 'in_progress'}
+                              title="Queue this task for the adapter CLI"
+                              className="p-1 rounded hover:bg-secondary text-muted-foreground disabled:opacity-40"
+                            >
+                              {runningTask === task.id
+                                ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                : <Play className="w-3.5 h-3.5" />}
+                            </button>
+                            <button
+                              onClick={() => deleteTask.mutate(task.id)}
+                              title="Delete task"
+                              className="p-1 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+
+                        {task.assignedAgent && (
+                          <div className="text-[11px] text-muted-foreground mt-1.5 font-mono">{task.assignedAgent}</div>
+                        )}
+
+                        {isExpanded && (
+                          <div className="mt-2 pt-2 border-t border-border space-y-1.5">
+                            {logs.map((log) => (
+                              <div key={log.id} className="text-[11px]">
+                                <div className="flex items-center justify-between gap-2">
+                                  <span className={`font-medium ${LOG_STYLES[log.type] ?? 'text-muted-foreground'}`}>
+                                    {log.type.replace(/_/g, ' ')}
+                                  </span>
+                                  <span className="text-muted-foreground shrink-0">
+                                    {new Date(log.createdAt).toLocaleTimeString()}
+                                  </span>
+                                </div>
+                                <p className="text-muted-foreground whitespace-pre-wrap break-words line-clamp-4">
+                                  {log.message}
+                                </p>
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
-                      {task.assignedAgent && (
-                        <div className="text-[11px] text-muted-foreground mt-1.5 font-mono">{task.assignedAgent}</div>
-                      )}
-                    </div>
-                  ))}
+                    );
+                  })}
 
                   {columnTasks.length === 0 && (
                     <div className="text-xs text-muted-foreground text-center py-6">Drop tasks here</div>
@@ -290,7 +403,6 @@ export const KanbanBoard = () => {
         </div>
       )}
 
-      {/* Create task */}
       <Modal isOpen={isCreateOpen} onClose={() => { setIsCreateOpen(false); setError(null); }} title="New Task" size="md">
         <div className="space-y-4">
           <div>
@@ -353,10 +465,10 @@ export const KanbanBoard = () => {
               className="mt-0.5"
             />
             <span className="text-sm">
-              Run immediately
+              Queue immediately
               <span className="block text-xs text-muted-foreground mt-0.5">
-                Hands the task to {activeProject?.adapterType || 'the project adapter'} right away, in the project's repo.
-                Uncheck to leave it in the backlog.
+                Pushes the task onto the queue for {activeProject?.adapterType || 'the project adapter'},
+                which runs it in the project's repo. Uncheck to leave it in the backlog.
               </span>
             </span>
           </label>

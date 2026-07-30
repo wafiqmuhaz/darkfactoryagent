@@ -73,19 +73,32 @@ export const getIO = (): Server => {
   return io;
 };
 
+/** True when a socket server exists — worker-only processes have none. */
+const hasIO = (): boolean => !!io;
+
+/** Emit to a project room, silently skipping when no socket server is running. */
+const emitToProject = (projectId: string, event: string, payload: unknown): void => {
+  if (!hasIO()) return;
+  io.to(`project_${projectId}`).emit(event, payload);
+};
+
 // Event emitters helpers
 export const emitTaskCreated = (projectId: string, task: any) => {
-  getIO().to(`project_${projectId}`).emit('task:created', task);
+  emitToProject(projectId, 'task:created', task);
 };
 
 export const emitTaskUpdated = (projectId: string, task: any) => {
-  getIO().to(`project_${projectId}`).emit('task:updated', task);
+  emitToProject(projectId, 'task:updated', task);
 };
 
 export const emitTaskDeleted = (projectId: string, taskId: string) => {
-  getIO().to(`project_${projectId}`).emit('task:deleted', { id: taskId });
+  emitToProject(projectId, 'task:deleted', { id: taskId });
+};
+
+export const emitActivityLog = (projectId: string, activity: any) => {
+  emitToProject(projectId, 'activity:log', activity);
 };
 
 export const emitAgentStatus = (projectId: string, status: any) => {
-  getIO().to(`project_${projectId}`).emit('agent:status', status);
+  emitToProject(projectId, 'agent:status', status);
 };

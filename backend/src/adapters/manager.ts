@@ -81,14 +81,14 @@ class AdapterManager {
 
   /**
    * Execute on `preferredId`, falling back through the remaining adapters when it
-   * is unavailable. Returns which adapter actually ran.
+   * fails. Returns which adapter actually ran.
    */
   async executeWithFallback(
     preferredId: string,
     task: AdapterTask
   ): Promise<ExecutionResult & { adapterUsed: string; fellBack: boolean }> {
     const order = [preferredId, ...Array.from(this.adapters.keys()).filter((id) => id !== preferredId)];
-    let lastError = `No adapter available for '${preferredId}'.`;
+    const failures: string[] = [];
 
     for (const id of order) {
       const adapter = this.adapters.get(id)?.adapter;
@@ -98,13 +98,17 @@ class AdapterManager {
       if (result.success) {
         return { ...result, adapterUsed: id, fellBack: id !== preferredId };
       }
-      lastError = result.error ?? lastError;
+      failures.push(`${id}: ${result.error ?? 'unknown error'}`);
     }
 
+    // Attribute each failure. Reporting only the last adapter's error hides why
+    // the one the user actually chose did not work.
     return {
       success: false,
       output: '',
-      error: lastError,
+      error: failures.length
+        ? failures.join(' | ')
+        : `No adapter available for '${preferredId}'.`,
       adapterUsed: preferredId,
       fellBack: false,
     };

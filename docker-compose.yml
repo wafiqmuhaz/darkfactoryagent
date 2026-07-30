@@ -37,8 +37,10 @@ services:
       - datalake_data:/app/datalake
       # Mount local projects so the agent can access them inside the container
       - /Users/putramac/Documents/GitHub:/Users/putramac/Documents/GitHub
-      # Adapter CLI auth/config, so `claude` and `codex` inside the container reuse host logins
+      # Adapter CLI auth/config, so `claude` and `codex` inside the container reuse host logins.
+      # claude.json sits beside the directory and is required — the CLI refuses to start without it.
       - ${HOME}/.claude:/root/.claude
+      - ${HOME}/.claude.json:/root/.claude.json
       - ${HOME}/.codex:/root/.codex
     networks:
       - dark-factory-network
@@ -66,6 +68,7 @@ services:
       - datalake_data:/app/datalake
       - /Users/putramac/Documents/GitHub:/Users/putramac/Documents/GitHub
       - ${HOME}/.claude:/root/.claude
+      - ${HOME}/.claude.json:/root/.claude.json
       - ${HOME}/.codex:/root/.codex
     networks:
       - dark-factory-network

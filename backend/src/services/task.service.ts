@@ -1,5 +1,8 @@
 import { PrismaClient } from '@prisma/client';
 import { emitTaskCreated, emitTaskUpdated, emitTaskDeleted } from '../websocket/socket';
+import { activityService } from './activity.service';
+import { taskQueue, priorityToQueueWeight } from '../orchestrator/queue-client';
+import { logger } from '../utils/logger';
 
 const prisma = new PrismaClient();
 
@@ -31,6 +34,8 @@ export interface CreateTaskInput {
   type?: string;
   projectId: string;
   parentTaskId?: string;
+  /** Set false to leave the task in the backlog instead of queueing it. */
+  autoRun?: boolean;
 }
 
 export interface UpdateTaskInput {
@@ -65,7 +70,49 @@ export class TaskService {
     });
 
     emitTaskCreated(task.projectId, task);
+
+    await activityService.log({
+      type: 'task_created',
+      message: `Task created: ${task.title}`,
+      metadata: { priority: task.priority, type: task.type },
+      taskId: task.id,
+      projectId: task.projectId,
+    });
+
+    // Creating a task is the trigger: push it onto the queue unless told otherwise.
+    if (input.autoRun !== false) {
+      await this.enqueueTask(task);
+    }
+
     return task;
+  }
+
+  /**
+   * Hand a task to the BullMQ worker. If Redis is unreachable the task stays
+   * queued-in-spirit: it is marked todo and the failure is logged, so it can be
+   * run manually from the board rather than silently disappearing.
+   */
+  async enqueueTask(task: { id: string; projectId: string; priority: string; title: string }) {
+    try {
+      const job = await taskQueue.add(
+        'task-run',
+        { agentType: 'adapter-exec', taskId: task.id, projectId: task.projectId },
+        { priority: priorityToQueueWeight(task.priority) }
+      );
+
+      await this.updateTaskStatus(task.id, TaskStatus.TODO, `Queued for execution (job ${job.id})`);
+      return { queued: true, jobId: job.id };
+    } catch (error: any) {
+      logger.warn(`Could not enqueue task ${task.id}: ${error.message}`);
+      await activityService.log({
+        type: 'error',
+        message: `Queue unavailable — task not started: ${error.message}. Use Run on the task card once Redis is reachable.`,
+        metadata: { taskId: task.id, error: error.message },
+        taskId: task.id,
+        projectId: task.projectId,
+      });
+      return { queued: false, error: error.message };
+    }
   }
 
   async getTask(taskId: string) {
@@ -108,14 +155,32 @@ export class TaskService {
     return task;
   }
 
-  async updateTaskStatus(taskId: string, status: string) {
-    const task = await prisma.task.update({
-      where: { id: taskId },
-      data: { status },
-    });
+  async updateTaskStatus(taskId: string, status: string, note?: string) {
+    const previous = await prisma.task.findUnique({ where: { id: taskId } });
+
+    // Keep the lifecycle timestamps in step with the status transition.
+    const data: Record<string, unknown> = { status };
+    if (status === TaskStatus.IN_PROGRESS && !previous?.startedAt) data.startedAt = new Date();
+    if (status === TaskStatus.DONE || status === TaskStatus.REVIEW) data.completedAt = new Date();
+
+    const task = await prisma.task.update({ where: { id: taskId }, data });
 
     emitTaskUpdated(task.projectId, task);
+
+    await activityService.log({
+      type: 'task_status',
+      message: note ?? `Task "${task.title}" moved ${previous?.status ?? 'unknown'} → ${status}`,
+      metadata: { from: previous?.status ?? null, to: status },
+      taskId: task.id,
+      projectId: task.projectId,
+    });
+
     return task;
+  }
+
+  /** Alias used by the queue worker. */
+  async updateStatus(taskId: string, status: string, note?: string) {
+    return this.updateTaskStatus(taskId, status, note);
   }
 
   async deleteTask(taskId: string) {
@@ -127,6 +192,29 @@ export class TaskService {
     });
 
     emitTaskDeleted(task.projectId, taskId);
+  }
+
+  /** Aggregate counts for the dashboard, read straight from the database. */
+  async getStats(projectId?: string) {
+    const where = projectId ? { projectId } : {};
+
+    const [total, byStatus] = await Promise.all([
+      prisma.task.count({ where }),
+      prisma.task.groupBy({ by: ['status'], where, _count: { status: true } }),
+    ]);
+
+    const counts: Record<string, number> = {};
+    for (const row of byStatus) counts[row.status] = row._count.status;
+
+    return {
+      total,
+      backlog: counts[TaskStatus.BACKLOG] ?? 0,
+      todo: counts[TaskStatus.TODO] ?? 0,
+      inProgress: counts[TaskStatus.IN_PROGRESS] ?? 0,
+      review: counts[TaskStatus.REVIEW] ?? 0,
+      done: counts[TaskStatus.DONE] ?? 0,
+      failed: counts[TaskStatus.FAILED] ?? 0,
+    };
   }
 }
 

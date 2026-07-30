@@ -27,6 +27,7 @@ import { routinesRoutes } from './routes/routines.routes';
 import { costsRoutes } from './routes/costs.routes';
 import { activityRoutes } from './routes/activity.routes';
 import { companyRoutes } from './routes/company.routes';
+import { agentRoutes } from './routes/agent.routes';
 import { auditLogger } from './middleware/auditLogger';
 import { apiRateLimiter } from './middleware/rateLimiter';
 
@@ -99,6 +100,7 @@ if (MODE === 'api' || MODE === 'monolith') {
   app.use('/api/costs', costsRoutes);
   app.use('/api/activities', activityRoutes);
   app.use('/api/company', companyRoutes);
+  app.use('/api/agents', agentRoutes);
 
   // Error handling middleware
   app.use(errorHandler);

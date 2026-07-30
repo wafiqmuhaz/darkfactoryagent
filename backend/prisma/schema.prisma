@@ -3,6 +3,10 @@
 
 generator client {
   provider = "prisma-client-js"
+  // "native" covers local development; the linux targets are needed because the
+  // Docker image runs on Debian (openssl 3.0), and Prisma picks its query engine
+  // binary at generate time, not at runtime.
+  binaryTargets = ["native", "linux-arm64-openssl-3.0.x", "debian-openssl-3.0.x"]
 }
 
 datasource db {

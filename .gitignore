@@ -56,14 +56,18 @@ yarn-debug.log*
 yarn-error.log*
 
 # All MD Files
+ADAPTERS.md
 AGENTS.md
 ARCHITECTURE.md
+DESC_ROADMAP.md
+ONBOARDING_FLOW.md
+README_FILES.md
 README.md
 ROADMAP.md
-DESC_ROADMAP.md
+ROUTINES.md
+SKILLS_STORE.md
 SKILLS_SYSTEM.md
 SYSTEM_FLOW.md
-README_FILES.md
 
 # Docs 
 docs/

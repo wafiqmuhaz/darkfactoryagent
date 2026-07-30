@@ -1,5 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
+import fs from 'fs';
+import path from 'path';
 import { projectService } from '../services/project.service';
 import { authMiddleware, AuthRequest } from '../middleware/auth';
 
@@ -86,7 +88,7 @@ router.delete('/:id', async (req: AuthRequest, res, next) => {
   try {
     const id = req.params.id as string;
     await projectService.delete(id, req.userId!);
-    res.status(204).send();
+    res.status(200).json({ success: true });
   } catch (error) {
     next(error);
   }
@@ -95,8 +97,26 @@ router.delete('/:id', async (req: AuthRequest, res, next) => {
 router.post('/validate-path', async (req: AuthRequest, res, next) => {
   try {
     const { localPath } = z.object({ localPath: z.string().min(1) }).parse(req.body);
-    const exists = require('fs').existsSync(localPath);
-    res.status(200).json({ valid: exists });
+
+    const resolved = path.resolve(localPath);
+    const exists = fs.existsSync(resolved);
+    const isDirectory = exists && fs.statSync(resolved).isDirectory();
+
+    if (isDirectory) {
+      return res.status(200).json({ valid: true, resolvedPath: resolved });
+    }
+
+    // The check runs wherever the backend runs. In Docker that is inside the
+    // container, so a path that exists on the host still fails unless it is
+    // mounted — say so instead of implying the directory is missing.
+    const containerized = fs.existsSync('/.dockerenv');
+    const reason = exists && !isDirectory
+      ? `${resolved} exists but is not a directory.`
+      : containerized
+        ? `${resolved} is not visible to the backend container. It must be added as a volume mount in docker-compose.yml, then the containers recreated.`
+        : `${resolved} does not exist.`;
+
+    res.status(200).json({ valid: false, resolvedPath: resolved, reason, containerized });
   } catch (error) {
     next(error);
   }
