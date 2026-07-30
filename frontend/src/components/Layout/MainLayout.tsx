@@ -2,14 +2,18 @@ import React, { useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuthStore, useUIStore, useNotificationStore } from '../../store';
 import type { AuthState, UIState, NotificationState } from '../../store';
-import { Menu, X, Sun, Moon, Laptop, Bell, LogOut, LayoutDashboard, Columns3, Folder, Cpu, Puzzle, BarChart3, Settings } from 'lucide-react';
+import { Menu, X, Sun, Moon, Laptop, Bell, LogOut, LayoutDashboard, Columns3, Folder, Cpu, Puzzle, BarChart3, Settings, Store, Timer, DollarSign, Activity } from 'lucide-react';
 
 const navItems = [
   { path: '/', label: 'Dashboard', icon: LayoutDashboard },
-  { path: '/kanban', label: 'Kanban Board', icon: Columns3 },
+  { path: '/kanban', label: 'Task Board', icon: Columns3 },
   { path: '/projects', label: 'Projects', icon: Folder },
   { path: '/agents', label: 'Agents', icon: Cpu },
   { path: '/skills', label: 'Skills', icon: Puzzle },
+  { path: '/skills-store', label: 'Skills Store', icon: Store },
+  { path: '/routines', label: 'Routines', icon: Timer },
+  { path: '/costs', label: 'Costs', icon: DollarSign },
+  { path: '/activity', label: 'Activity', icon: Activity },
   { path: '/analytics', label: 'Analytics', icon: BarChart3 },
   { path: '/settings', label: 'Settings', icon: Settings },
 ];

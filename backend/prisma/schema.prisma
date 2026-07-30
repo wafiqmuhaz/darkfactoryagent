@@ -47,6 +47,8 @@ model Project {
   tasks       Task[]
   artifacts   Artifact[]
   agentRuns   AgentRun[]
+  routines    Routine[]
+  companyProjects ProjectCompany[]
 
   @@map("projects")
 }
@@ -120,19 +122,19 @@ model Artifact {
   @@map("artifacts")
 }
 
-// ─── Skills ─────────────────────────────────────────────────────────
+// ─── Legacy Skills (replaced by Skills Store) ─────────────────────
 
-model Skill {
+model LegacySkill {
   id          String  @id @default(uuid())
   name        String  @unique
   description String?
   category    String                   // browser, mobile, filesystem, api, custom
-  agentType   String  @map("agent_type") // Which agent types can use this skill
+  agentType   String  @map("agent_type")
   parameters  String?                  // JSON schema for parameters
   isEnabled   Boolean @default(true) @map("is_enabled")
   createdAt   DateTime @default(now()) @map("created_at")
 
-  @@map("skills")
+  @@map("legacy_skills")
 }
 
 // ─── Agent Runs ─────────────────────────────────────────────────────
@@ -317,4 +319,270 @@ model Integration {
   updatedAt   DateTime @updatedAt      @map("updated_at")
 
   @@map("integrations")
+}
+
+// ─── Companies (Paperclip-aligned onboarding) ─────────────────────
+
+model Company {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  mission   String?
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt      @map("updated_at")
+
+  agents    Agent[]
+  projects  ProjectCompany[]
+  invites   Invite[]
+  members   CompanyMember[]
+
+  @@map("companies")
+}
+
+model ProjectCompany {
+  id         String   @id @default(uuid())
+  localPath  String   @map("local_path")   // Local filesystem path to project repo
+  isActive   Boolean  @default(true) @map("is_active")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  companyId  String   @map("company_id")
+  company    Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  projectId  String   @map("project_id")
+  project    Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, projectId])
+  @@map("project_companies")
+}
+
+// ─── Agents (extended for onboarding) ────────────────────────────
+
+model Agent {
+  id         String     @id @default(uuid())
+  name       String                    // e.g., "Chief of Staff"
+  type       String     @default("chief-of-staff") // chief-of-staff, spec-writer, code-writer, etc.
+  role       String?                   // e.g., "orchestrator"
+  skills     String?                   // JSON array of skill IDs
+  config     String?                   // JSON config (temperature, maxTokens)
+  isActive   Boolean    @default(true) @map("is_active")
+  createdAt  DateTime   @default(now()) @map("created_at")
+  updatedAt  DateTime   @updatedAt     @map("updated_at")
+
+  companyId  String     @map("company_id")
+  company    Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  adapterId  String?    @map("adapter_id")
+  adapter    Adapter?   @relation(fields: [adapterId], references: [id])
+
+  @@map("agents")
+}
+
+// ─── Adapters (Claude Code CLI, Codex, etc.) ──────────────────────
+
+model Adapter {
+  id          String     @id @default(uuid())
+  name        String     @unique        // "claude-code", "codex", etc.
+  displayName String     @map("display_name")
+  type        String     @default("cli") // "cli", "api"
+  description String?
+  command     String?                   // CLI command path
+  envVars     String?                   // JSON of required env vars
+  version     String?                   // Detected CLI version
+  models      String?                   // JSON array of supported models
+  isConnected Boolean    @default(false) @map("is_connected")
+  lastProbeAt DateTime?  @map("last_probe_at")
+  probeStatus String?                   // "ready", "error", "not_tested"
+  probeError  String?                   // Last probe error message
+  config      String?                   // JSON config for adapter
+  isDefault   Boolean    @default(false) @map("is_default")
+  createdAt   DateTime   @default(now()) @map("created_at")
+  updatedAt   DateTime   @updatedAt     @map("updated_at")
+
+  agents      Agent[]
+
+  @@map("adapters")
+}
+
+// ─── Skills Store ─────────────────────────────────────────────────
+
+model Skill {
+  id            String     @id @default(uuid())
+  name          String     @unique
+  displayName   String     @map("display_name")
+  description   String?
+  category      String     @default("custom") // browser, mobile, filesystem, api, custom
+  version       String     @default("1.0.0")
+  author        String     @default("dark-factory")
+  icon          String?
+  tags          String?
+  codePath      String?    @map("code_path")
+  entrypoint    String?    @default("index.js")
+  configSchema  String?    @map("config_schema") // JSON schema
+  isInstalled   Boolean    @default(false) @map("is_installed")
+  isEnabled     Boolean    @default(true)  @map("is_enabled")
+  isBuiltIn     Boolean    @default(false) @map("is_built_in")
+  installedAt   DateTime?  @map("installed_at")
+  createdAt     DateTime   @default(now()) @map("created_at")
+  updatedAt     DateTime   @updatedAt     @map("updated_at")
+
+  @@map("skills_store")
+}
+
+// ─── Routines (recurring scheduled tasks) ─────────────────────────
+
+model Routine {
+  id            String     @id @default(uuid())
+  name          String
+  description   String?
+  schedule      String                   // Cron expression
+  timezone      String     @default("UTC")
+  taskTemplate  String?                  // JSON template for task creation
+  isActive      Boolean    @default(true) @map("is_active")
+  lastRunAt     DateTime?  @map("last_run_at")
+  nextRunAt     DateTime?  @map("next_run_at")
+  runCount      Int        @default(0)   @map("run_count")
+  createdAt     DateTime   @default(now()) @map("created_at")
+  updatedAt     DateTime   @updatedAt    @map("updated_at")
+
+  projectId     String     @map("project_id")
+  project       Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  agentId       String?    @map("agent_id")
+  skillId       String?    @map("skill_id")
+
+  runs          RoutineRun[]
+
+  @@map("routines")
+}
+
+model RoutineRun {
+  id          String     @id @default(uuid())
+  status      String     @default("pending") // pending, running, completed, failed
+  output      String?
+  error       String?
+  duration    Int        @default(0)         // in seconds
+  startedAt   DateTime?  @map("started_at")
+  completedAt DateTime?  @map("completed_at")
+  createdAt   DateTime   @default(now()) @map("created_at")
+
+  routineId   String     @map("routine_id")
+  routine     Routine    @relation(fields: [routineId], references: [id], onDelete: Cascade)
+
+  @@map("routine_runs")
+}
+
+// ─── Cost Tracking ────────────────────────────────────────────────
+
+model CostLedger {
+  id          String   @id @default(uuid())
+  amount      Float
+  currency    String   @default("USD")
+  description String?
+  category    String   @default("inference") // inference, api, storage, compute
+  referenceId String?  @map("reference_id")  // agent_run_id, task_id, etc.
+  referenceType String? @map("reference_type") // agent_run, task, routine
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@map("cost_ledger")
+}
+
+model Budget {
+  id        String   @id @default(uuid())
+  name      String   @default("Monthly Budget")
+  amount    Float    @default(10.00)       // USD limit
+  period    String   @default("monthly")   // monthly, weekly, custom
+  startDate DateTime @default(now()) @map("start_date")
+  endDate   DateTime?
+  alert50   Boolean  @default(true)  @map("alert_50")
+  alert80   Boolean  @default(true)  @map("alert_80")
+  alert100  Boolean  @default(true)  @map("alert_100")
+  isActive  Boolean  @default(true)  @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt     @map("updated_at")
+
+  @@map("budgets")
+}
+
+// ─── Activity Timeline ────────────────────────────────────────────
+
+model Activity {
+  id          String   @id @default(uuid())
+  type        String                    // agent_run, task_status, system, routine, skill, adapter
+  message     String
+  metadata    String?                   // JSON extra data
+  agentId     String?  @map("agent_id")
+  taskId      String?  @map("task_id")
+  projectId   String?  @map("project_id")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([createdAt])
+  @@index([type, createdAt])
+  @@map("activities")
+}
+
+// ─── Onboarding Session (persist mid-wizard state) ────────────────
+
+model OnboardingSession {
+  id          String   @id @default(uuid())
+  userId      String   @unique @map("user_id")
+  currentStep Int      @default(0)   @map("current_step")
+  companyName String?  @map("company_name")
+  mission     String?
+  missionMode String?  @map("mission_mode") // "i-know" or "help-me"
+  agentName   String?  @map("agent_name")
+  adapterId   String?  @map("adapter_id")
+  adapterName String?  @map("adapter_name")
+  completed   Boolean  @default(false)
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt     @map("updated_at")
+
+  @@map("onboarding_sessions")
+}
+
+// ─── Secrets (encrypted env vars) ─────────────────────────────────
+
+model Secret {
+  id        String   @id @default(uuid())
+  key       String                   // e.g., "ANTHROPIC_API_KEY"
+  value     String                   // Encrypted value
+  scope     String   @default("user") // user, project, global
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt     @map("updated_at")
+
+  @@unique([key, scope])
+  @@map("secrets")
+}
+
+// ─── Company Invites ──────────────────────────────────────────────
+
+model Invite {
+  id        String   @id @default(uuid())
+  email     String
+  role      String   @default("member") // owner, admin, operator, viewer
+  token     String   @unique
+  status    String   @default("pending") // pending, accepted, expired, revoked
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  companyId String   @map("company_id")
+  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  invitedBy String   @map("invited_by")
+
+  @@map("invites")
+}
+
+// ─── Company Members ──────────────────────────────────────────────
+
+model CompanyMember {
+  id        String   @id @default(uuid())
+  role      String   @default("owner") // owner, admin, operator, viewer
+  joinedAt  DateTime @default(now()) @map("joined_at")
+
+  companyId String   @map("company_id")
+  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  userId    String   @map("user_id")
+
+  @@unique([companyId, userId])
+  @@map("company_members")
 }

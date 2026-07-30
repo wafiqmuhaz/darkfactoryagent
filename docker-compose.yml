@@ -15,7 +15,7 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     deploy:
-      replicas: 1 # Scale this up for horizontal API scaling
+      replicas: 1
     environment:
       - NODE_ENV=production
       - PROCESS_MODE=api
@@ -24,6 +24,9 @@ services:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - JWT_SECRET=dark_factory_super_secret_key_change_me
+      - ADAPTER_DEFAULT=claude-code
+      - COST_MAX_BUDGET=10
+      - ROUTINE_TIMEZONE=UTC
     depends_on:
       - redis
     volumes:
@@ -37,13 +40,15 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     deploy:
-      replicas: 2 # Horizontal scaling for Agents
+      replicas: 2
     environment:
       - NODE_ENV=production
       - PROCESS_MODE=worker
       - DATABASE_URL=file:./dev.db
       - REDIS_HOST=redis
       - REDIS_PORT=6379
+      - ADAPTER_DEFAULT=claude-code
+      - COST_MAX_BUDGET=10
     depends_on:
       - redis
     volumes:
@@ -71,6 +76,21 @@ services:
       - "6379:6379"
     volumes:
       - redis_data:/data
+    networks:
+      - dark-factory-network
+
+  # Adapter service container (CLI-based adapters)
+  adapter-claude-code:
+    image: node:22-alpine
+    profiles:
+      - adapters
+    command: >
+      sh -c "
+      npm i -g @anthropic-ai/claude-code 2>/dev/null || echo 'Claude Code CLI install skipped';
+      tail -f /dev/null
+      "
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
     networks:
       - dark-factory-network
 

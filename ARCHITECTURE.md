@@ -176,29 +176,63 @@ agent_runs    (id, agent_type, task_id, status, logs, tokens_used, cost, created
 metrics       (id, category, name, value, unit, recorded_at)
 ```
 
-### 5. Skills System
+### 5. Skills Store System
 
-The skill system is designed to be extensible:
+The skills store manages agent capabilities with installation, versioning, and categories:
 
 ```
 skills/
 ├── browser-use/
+│   ├── meta.json          # Name, version, category, configSchema
+│   ├── index.js           # Main implementation
+│   └── prompts/           # Agent prompts
+├── droidmind/
+│   ├── meta.json
 │   ├── index.js
-│   ├── prompts/
-│   ├── config/
-│   └── tests/
-├── DroidMind/
+│   └── prompts/
+├── file-system/
+│   ├── meta.json
 │   ├── index.js
-│   ├── prompts/
-│   ├── config/
-│   └── tests/
-├── custom-skills/
-│   ├── skill-template/
-│   └── register.js
-└── skill-registry.js
+│   └── prompts/
+└── api-integration/
+    ├── meta.json
+    ├── index.js
+    └── prompts/
 ```
 
-### 6. Execution Pipeline
+### 6. Routine Scheduler
+
+Recurring tasks managed via `node-cron` with database persistence:
+
+```
+ ┌──────────────┐    ┌───────────────┐    ┌─────────────────┐
+ │  Routine     │───→│  Scheduler    │───→│  Task Queue      │
+ │  Created     │    │  Service      │    │  (BullMQ)        │
+ └──────────────┘    └───────────────┘    └─────────────────┘
+      │                     │                      │
+      ▼                     ▼                      ▼
+ ┌──────────────┐    ┌───────────────┐    ┌─────────────────┐
+ │  Cron Job    │    │  node-cron    │    │  Agent           │
+ │  Persisted   │    │  Evaluation   │    │  Execution       │
+ └──────────────┘    └───────────────┘    └─────────────────┘
+```
+
+### 7. Onboarding Flow (Paperclip.ai Aligned)
+
+```
+ Step 1            Step 2             Step 3            Step 4           Step 5
+ ┌────────┐      ┌──────────┐      ┌──────────┐      ┌────────┐      ┌────────┐
+ │ Build  │──→   │ Define   │──→   │ Create   │──→   │Connect │──→   │Review  │
+ │Company │      │ Mission  │      │Team Lead │      │ Model  │      │& Start │
+ └────────┘      └──────────┘      └──────────┘      └────────┘      └────────┘
+    │                │                  │                │                │
+    ▼                ▼                  ▼                ▼                ▼
+ POST /api/      POST /api/        POST /api/       POST /api/        POST /api/
+ onboarding/    onboarding/       onboarding/       adapters/         onboarding/
+ company        mission           agent             probe              review
+```
+
+### 8. Execution Pipeline
 
 ```
 ┌────────────────────────────────────────────────────────────┐

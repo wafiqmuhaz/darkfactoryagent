@@ -20,6 +20,13 @@ import { skillStudioRoutes } from './routes/skill-studio.routes';
 import { teamRoutes } from './routes/team.routes';
 import { enterpriseRoutes } from './routes/enterprise.routes';
 import { integrationRoutes } from './routes/integration.routes';
+import { onboardingRoutes } from './routes/onboarding.routes';
+import { adapterRoutes } from './routes/adapter.routes';
+import { skillsRoutes } from './routes/skills.routes';
+import { routinesRoutes } from './routes/routines.routes';
+import { costsRoutes } from './routes/costs.routes';
+import { activityRoutes } from './routes/activity.routes';
+import { companyRoutes } from './routes/company.routes';
 import { auditLogger } from './middleware/auditLogger';
 import { apiRateLimiter } from './middleware/rateLimiter';
 
@@ -84,6 +91,13 @@ if (MODE === 'api' || MODE === 'monolith') {
   app.use('/api/teams', teamRoutes);
   app.use('/api/enterprise', enterpriseRoutes);
   app.use('/api/integrations', integrationRoutes);
+  app.use('/api/onboarding', onboardingRoutes);
+  app.use('/api/adapters', adapterRoutes);
+  app.use('/api/skills', skillsRoutes);
+  app.use('/api/routines', routinesRoutes);
+  app.use('/api/costs', costsRoutes);
+  app.use('/api/activities', activityRoutes);
+  app.use('/api/company', companyRoutes);
 
   // Error handling middleware
   app.use(errorHandler);

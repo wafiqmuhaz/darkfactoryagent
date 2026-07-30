@@ -59,6 +59,9 @@ export const config = {
     nightlySchedule: process.env.NIGHTLY_SCHEDULE || '0 21 * * *',
     maxConcurrent: parseInt(process.env.MAX_CONCURRENT_AGENTS || '3', 10),
     monthlyBudget: parseFloat(process.env.MONTHLY_BUDGET_LIMIT || '100'),
+    adapterDefault: process.env.ADAPTER_DEFAULT || 'claude-code',
+    costMaxBudget: parseFloat(process.env.COST_MAX_BUDGET || '10'),
+    routineTimezone: process.env.ROUTINE_TIMEZONE || 'UTC',
   },
 
   // Logging
