@@ -8,6 +8,7 @@ export const agentKeys = {
   roster: () => [...agentKeys.all, 'roster'] as const,
   adapterStatus: () => [...agentKeys.all, 'adapter-status'] as const,
   detail: (id: string) => [...agentKeys.all, id, 'detail'] as const,
+  companySeries: (days: number) => [...agentKeys.all, 'company-series', days] as const,
   series: (id: string, days: number) => [...agentKeys.all, id, 'series', days] as const,
   tasks: (id: string) => [...agentKeys.all, id, 'tasks'] as const,
   runs: (id: string) => [...agentKeys.all, id, 'runs'] as const,
@@ -41,6 +42,14 @@ export function useAgentDetail(id: string | undefined) {
     queryKey: agentKeys.detail(id ?? ''),
     queryFn: () => agentsApi.detail(id!),
     enabled: !!id,
+  });
+}
+
+export function useCompanySeries(days = 14) {
+  return useQuery({
+    queryKey: agentKeys.companySeries(days),
+    queryFn: () => agentsApi.companySeries(days),
+    refetchInterval: 30000,
   });
 }
 

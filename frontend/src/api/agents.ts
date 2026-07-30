@@ -314,6 +314,9 @@ export const agentsApi = {
   series: async (id: string, days = 14) =>
     (await apiClient.get(`/agents/${id}/series`, { params: { days } })).data as AgentSeriesPayload,
 
+  companySeries: async (days = 14) =>
+    (await apiClient.get('/agents/series', { params: { days } })).data as AgentSeriesPayload,
+
   tasks: async (id: string, limit = 5) =>
     (await apiClient.get(`/agents/${id}/tasks`, { params: { limit } })).data.tasks as AgentTaskRow[],
 

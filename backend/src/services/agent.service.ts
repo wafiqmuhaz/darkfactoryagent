@@ -440,6 +440,104 @@ export class AgentService {
     };
   }
 
+  /**
+   * Company-wide version of {@link getAgentSeries}: the same four daily series,
+   * but aggregated across every agent in the caller's company. Powers the main
+   * Dashboard's chart row. Tasks are scoped through the company's projects
+   * rather than per-agent assignment, so the status/priority mix reflects the
+   * whole workspace.
+   */
+  async getCompanySeries(userId: string, days = 14) {
+    const membership = await this.requireMembership(userId);
+    const buckets = this.dayBuckets(days);
+    const since = buckets[0]!.from;
+
+    const [agents, companyProjects] = await Promise.all([
+      prisma.agent.findMany({
+        where: { companyId: membership.companyId },
+        select: { id: true },
+      }),
+      prisma.projectCompany.findMany({
+        where: { companyId: membership.companyId },
+        select: { projectId: true },
+      }),
+    ]);
+    const agentIds = agents.map((a) => a.id);
+    const projectIds = companyProjects.map((p) => p.projectId);
+
+    const [runs, tasks, ledger] = await Promise.all([
+      agentIds.length
+        ? prisma.agentRun.findMany({
+            where: { agentId: { in: agentIds }, createdAt: { gte: since } },
+            select: { status: true, createdAt: true },
+          })
+        : Promise.resolve([]),
+      projectIds.length
+        ? prisma.task.findMany({
+            where: { projectId: { in: projectIds }, updatedAt: { gte: since } },
+            select: { priority: true, status: true, updatedAt: true },
+          })
+        : Promise.resolve([]),
+      agentIds.length
+        ? prisma.costLedger.findMany({
+            where: { agentId: { in: agentIds }, createdAt: { gte: since } },
+            select: { amount: true, createdAt: true },
+          })
+        : Promise.resolve([]),
+    ]);
+
+    const blank = () => buckets.map(() => 0);
+    const runActivity = blank();
+    const runsCompleted = blank();
+    const runsFailed = blank();
+    const spend = blank();
+    const byPriority: Record<string, number[]> = {
+      critical: blank(),
+      high: blank(),
+      medium: blank(),
+      low: blank(),
+    };
+    const byStatus: Record<string, number[]> = {
+      in_progress: blank(),
+      review: blank(),
+      done: blank(),
+      failed: blank(),
+    };
+
+    for (const run of runs) {
+      const i = this.bucketIndex(buckets, run.createdAt);
+      if (i < 0) continue;
+      runActivity[i]! += 1;
+      if (run.status === 'completed') runsCompleted[i]! += 1;
+      if (run.status === 'failed') runsFailed[i]! += 1;
+    }
+
+    for (const task of tasks) {
+      const i = this.bucketIndex(buckets, task.updatedAt);
+      if (i < 0) continue;
+      if (byPriority[task.priority]) byPriority[task.priority]![i]! += 1;
+      if (byStatus[task.status]) byStatus[task.status]![i]! += 1;
+    }
+
+    for (const entry of ledger) {
+      const i = this.bucketIndex(buckets, entry.createdAt);
+      if (i >= 0) spend[i]! += entry.amount;
+    }
+
+    return {
+      days,
+      dates: buckets.map((b) => b.date),
+      runActivity,
+      tasksByPriority: byPriority,
+      tasksByStatus: byStatus,
+      successRate: buckets.map((_, i) => {
+        const finished = runsCompleted[i]! + runsFailed[i]!;
+        return finished > 0 ? Math.round((runsCompleted[i]! / finished) * 100) : null;
+      }),
+      spendUsd: spend.map((v) => Math.round(v * 10000) / 10000),
+    };
+  }
+
   /** Recent tasks for the Dashboard tab's "Recent Tasks" list. */
   async getAgentTasks(agentId: string, userId: string, limit = 5) {
     const agent = await this.requireAgent(agentId, userId);

@@ -153,6 +153,18 @@ router.get('/', async (req: AuthRequest, res, next) => {
   }
 });
 
+// GET /api/agents/series — company-wide daily series behind the main Dashboard
+// charts. Registered before /:id so "series" isn't captured as an agent id.
+router.get('/series', async (req: AuthRequest, res, next) => {
+  try {
+    const days = limitOf(req.query.days, 14, 90);
+    const series = await agentService.getCompanySeries(req.userId!, days);
+    res.status(200).json(series);
+  } catch (error) {
+    next(error);
+  }
+});
+
 // GET /api/agents/:id — Dashboard tab header, latest run, stats, cost totals
 router.get('/:id', async (req: AuthRequest, res, next) => {
   try {

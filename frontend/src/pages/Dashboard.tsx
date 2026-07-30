@@ -1,14 +1,19 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { apiClient } from '../api/client';
 import { useProjectStore } from '../store';
 import type { ProjectState } from '../store';
 import { useProjectSocket } from '../hooks/useProjectSocket';
+import { useAgentRoster, useCompanySeries } from '../hooks/useAgents';
+import { useTasks } from '../hooks/useTasks';
 import { StatsCards } from '../components/Dashboard/StatsCards';
 import { Spinner } from '../components/common/Spinner';
+import { BarChart } from '../components/charts/BarChart';
+import { LineChart } from '../components/charts/LineChart';
+import { StatusBadge } from '../components/agents/primitives';
 import {
   ListTodo, Loader2, AlertTriangle, DollarSign, Columns3, Timer,
-  Activity as ActivityIcon, Cpu, CheckCircle, XCircle, Folder,
+  Activity as ActivityIcon, Cpu, CheckCircle, XCircle, Folder, Bot,
 } from 'lucide-react';
 import { formatRelativeTime } from '../utils/helpers';
 
@@ -74,10 +79,17 @@ export const Dashboard = () => {
     queryFn: async () => (await apiClient.get('/agents/status')).data as AgentStatusPayload,
   });
 
+  // Company-wide roster, daily series, and recent tasks — all real rows.
+  const { data: roster = [] } = useAgentRoster();
+  const { data: series } = useCompanySeries(14);
+  const { tasks: recentTasks } = useTasks(scope);
+
   // Live: any task or activity event refreshes the figures.
   const refresh = () => {
     queryClient.invalidateQueries({ queryKey: ['metrics', scope] });
     queryClient.invalidateQueries({ queryKey: ['agent-status'] });
+    queryClient.invalidateQueries({ queryKey: ['agents'] });
+    if (scope) queryClient.invalidateQueries({ queryKey: ['tasks', scope] });
   };
   useProjectSocket(scope, {
     onTaskCreated: refresh,
@@ -171,6 +183,114 @@ export const Dashboard = () => {
       </div>
 
       <StatsCards stats={stats} />
+
+      {/* Agent roster — one card per company agent, all real rows. */}
+      {roster.length > 0 && (
+        <div>
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <Bot className="w-5 h-5 text-muted-foreground" />
+              <h3 className="font-semibold">Agents</h3>
+              <span className="text-xs text-muted-foreground">{roster.length}</span>
+            </div>
+            <Link to="/agents" className="text-xs text-primary hover:underline">See All →</Link>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {roster.map((a) => (
+              <Link
+                key={a.id}
+                to={`/agents/${a.id}`}
+                className="block bg-background border border-border rounded-lg p-4 hover:border-primary/50 transition-all"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="font-medium truncate">{a.name}</div>
+                    <div className="text-xs text-muted-foreground truncate">
+                      {a.title || a.role || a.type}
+                    </div>
+                  </div>
+                  <StatusBadge status={a.status} />
+                </div>
+
+                <div className="text-xs text-muted-foreground font-mono mt-2 truncate">
+                  {a.adapter.name ?? 'no adapter'} · {a.model}
+                </div>
+
+                <div className="grid grid-cols-3 gap-2 text-center mt-3 pt-3 border-t border-border">
+                  <div>
+                    <div className="text-sm font-semibold">{a.runs.total}</div>
+                    <div className="text-[11px] text-muted-foreground">Runs</div>
+                  </div>
+                  <div>
+                    <div className="text-sm font-semibold">
+                      {a.successRate === null ? '—' : `${a.successRate}%`}
+                    </div>
+                    <div className="text-[11px] text-muted-foreground">Success</div>
+                  </div>
+                  <div>
+                    <div className="text-sm font-semibold">${a.totalSpendUsd.toFixed(a.totalSpendUsd < 1 ? 4 : 2)}</div>
+                    <div className="text-[11px] text-muted-foreground">Spend</div>
+                  </div>
+                </div>
+
+                {a.runs.failed > 0 && (
+                  <div className="mt-3 flex items-center gap-1.5 text-xs text-destructive">
+                    <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                    {a.runs.failed} failed {a.runs.failed === 1 ? 'run' : 'runs'} — needs recovery
+                  </div>
+                )}
+                {a.runs.failed === 0 && a.latestRun && (
+                  <div className="mt-3 text-xs text-muted-foreground truncate">
+                    Last run {a.latestRun.status.replace(/_/g, ' ')} · {formatRelativeTime(a.latestRun.createdAt)}
+                  </div>
+                )}
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Company-wide daily series — four charts from the same 14-day window. */}
+      {series && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <BarChart
+            title="Run Activity"
+            subtitle="Last 14 days"
+            dates={series.dates}
+            series={[{ key: 'runs', label: 'Runs', colorVar: '--viz-series-1', values: series.runActivity }]}
+          />
+          <BarChart
+            title="Tasks by Priority"
+            subtitle="Last 14 days"
+            dates={series.dates}
+            series={[
+              { key: 'critical', label: 'Critical', colorVar: '--viz-ordinal-4', values: series.tasksByPriority.critical },
+              { key: 'high', label: 'High', colorVar: '--viz-ordinal-3', values: series.tasksByPriority.high },
+              { key: 'medium', label: 'Medium', colorVar: '--viz-ordinal-2', values: series.tasksByPriority.medium },
+              { key: 'low', label: 'Low', colorVar: '--viz-ordinal-1', values: series.tasksByPriority.low },
+            ]}
+          />
+          <BarChart
+            title="Tasks by Status"
+            subtitle="Last 14 days"
+            dates={series.dates}
+            series={[
+              { key: 'in_progress', label: 'In progress', colorVar: '--viz-series-1', values: series.tasksByStatus.in_progress },
+              { key: 'review', label: 'Review', colorVar: '--viz-series-4', values: series.tasksByStatus.review },
+              { key: 'done', label: 'Done', colorVar: '--viz-series-3', values: series.tasksByStatus.done },
+              { key: 'failed', label: 'Failed', colorVar: '--viz-series-2', values: series.tasksByStatus.failed },
+            ]}
+          />
+          <LineChart
+            title="Success Rate"
+            subtitle="Last 14 days"
+            dates={series.dates}
+            maxValue={100}
+            series={[{ key: 'rate', label: 'Success rate', colorVar: '--viz-series-3', values: series.successRate }]}
+            format={(v) => `${v}%`}
+          />
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Recent activity, straight from the Activity table */}
@@ -271,6 +391,34 @@ export const Dashboard = () => {
             </div>
           )}
         </div>
+      </div>
+
+      {/* Recent Tasks — project-scoped rows straight from the Tasks table. */}
+      <div>
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <ListTodo className="w-5 h-5 text-muted-foreground" />
+            <h3 className="font-semibold">Recent Tasks</h3>
+          </div>
+          <Link to="/kanban" className="text-xs text-primary hover:underline">See All →</Link>
+        </div>
+        {recentTasks.length === 0 ? (
+          <div className="border border-border rounded-lg bg-background">
+            <p className="text-sm text-muted-foreground text-center py-8">No tasks yet.</p>
+          </div>
+        ) : (
+          <ul className="divide-y divide-border border border-border rounded-lg overflow-hidden">
+            {recentTasks.slice(0, 8).map((task) => (
+              <li key={task.id} className="flex items-center gap-3 px-4 py-2.5 bg-background">
+                <span className="text-xs font-mono text-muted-foreground shrink-0">
+                  {task.id.slice(0, 6).toUpperCase()}
+                </span>
+                <span className="text-sm truncate flex-1">{task.title}</span>
+                <StatusBadge status={task.status} />
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
     </div>
   );
