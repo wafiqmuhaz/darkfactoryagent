@@ -130,7 +130,7 @@ export const Activity = () => {
           <div className="absolute left-4 top-0 bottom-0 w-px bg-border" />
 
           <div className="space-y-0">
-            {activities.map((item, i) => (
+            {activities.map((item) => (
               <div key={item.id} className="relative pl-10 pb-6">
                 {/* Timeline dot */}
                 <div className={`absolute left-2.5 top-1 w-3 h-3 rounded-full border-2 border-background ${

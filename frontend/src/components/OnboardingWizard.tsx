@@ -2,11 +2,10 @@ import { useState, useEffect } from 'react';
 import { useAuthStore } from '../store';
 import { apiClient } from '../api/client';
 import { Button } from './common/Button';
-import { Spinner } from './common/Spinner';
 import {
-  Sparkles, Building2, Target, UserCircle, Plug, CheckCircle2,
-  ChevronRight, ChevronLeft, HelpCircle, Loader2, AlertCircle,
-  CheckCircle, XCircle, Monitor, Globe
+  Building2, Target, UserCircle, Plug, CheckCircle2,
+  ChevronRight, ChevronLeft, Loader2, AlertCircle,
+  CheckCircle, XCircle
 } from 'lucide-react';
 
 type Step = 'company' | 'mission' | 'agent' | 'adapter' | 'review';
@@ -59,7 +58,7 @@ export const OnboardingWizard = () => {
   const checkOnboardingStatus = async () => {
     try {
       const res = await apiClient.get('/onboarding/status');
-      const { completed, currentStep: savedStep, session } = res.data;
+      const { completed, session } = res.data;
 
       if (!completed && session) {
         // Resume from saved step
@@ -505,7 +504,7 @@ export const OnboardingWizard = () => {
                   <div>
                     <div className="text-sm font-medium">Model</div>
                     <div className="text-xs text-muted-foreground">
-                      {selectedAdapter} — {probeResults[selectedAdapter]?.status === 'ready' ? 'Ready' : 'Not tested'}
+                      {selectedAdapter || 'None'} — {probeResults[selectedAdapter ?? '']?.status === 'ready' ? 'Ready' : 'Not tested'}
                     </div>
                   </div>
                 </div>

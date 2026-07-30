@@ -29,7 +29,7 @@ export const Settings = () => {
   const [isLoading, setIsLoading] = useState(false);
 
   // Company state
-  const [company, setCompany] = useState<CompanyInfo | null>(null);
+  const [_company, setCompany] = useState<CompanyInfo | null>(null);
   const [companyName, setCompanyName] = useState('');
   const [companyMission, setCompanyMission] = useState('');
   const [members, setMembers] = useState<CompanyMember[]>([]);

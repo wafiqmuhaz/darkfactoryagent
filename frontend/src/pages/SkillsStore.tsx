@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { apiClient } from '../api/client';
 import { Button } from '../components/common/Button';
 import { Spinner } from '../components/common/Spinner';
-import { Search, Download, Check, X, RefreshCw, Grid3X3, List, Globe, Smartphone, FileText, Database, Puzzle } from 'lucide-react';
+import { Search, Download, X, RefreshCw, Globe, Smartphone, FileText, Database, Puzzle } from 'lucide-react';
 
 interface StoreSkill {
   name: string;
@@ -15,6 +15,7 @@ interface StoreSkill {
   tags?: string;
   isInstalled: boolean;
   isEnabled: boolean;
+  isBuiltIn: boolean;
   source: string;
 }
 

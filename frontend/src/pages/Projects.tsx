@@ -49,10 +49,8 @@ export const Projects = () => {
       const res = await apiClient.post('/projects', {
         name: form.name,
         description: form.description,
-        path: form.path,
-        repoUrl: form.repoUrl || undefined,
-        aiProvider: form.aiProvider,
-        apiKey: form.apiKey,
+        localPath: form.path,
+        githubRepoUrl: form.repoUrl || undefined,
       });
       return res.data;
     },
@@ -66,7 +64,7 @@ export const Projects = () => {
 
   const validatePath = async () => {
     try {
-      const res = await apiClient.post('/projects/validate-path', { path: form.path });
+      const res = await apiClient.post('/projects/validate-path', { localPath: form.path });
       return res.data.valid;
     } catch {
       return false;

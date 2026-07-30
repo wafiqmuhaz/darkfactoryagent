@@ -7,7 +7,7 @@ import { AgentOverview } from '../components/Dashboard/AgentOverview';
 import { CostTracker } from '../components/Dashboard/CostTracker';
 import { Spinner } from '../components/common/Spinner';
 import { useNavigate } from 'react-router-dom';
-import { CheckCircle, ListTodo, Users, GitPullRequest, Columns3, Timer, DollarSign, Activity } from 'lucide-react';
+import { CheckCircle, ListTodo, Users, Columns3, Timer, DollarSign, Activity } from 'lucide-react';
 
 export const Dashboard = () => {
   const navigate = useNavigate();

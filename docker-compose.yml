@@ -32,6 +32,8 @@ services:
     volumes:
       - ./backend/prisma:/app/prisma
       - datalake_data:/app/datalake
+      # Mount local projects so the agent can access them inside the container
+      - /Users/putramac/Documents/GitHub:/Users/putramac/Documents/GitHub
     networks:
       - dark-factory-network
 
@@ -54,6 +56,7 @@ services:
     volumes:
       - ./backend/prisma:/app/prisma
       - datalake_data:/app/datalake
+      - /Users/putramac/Documents/GitHub:/Users/putramac/Documents/GitHub
     networks:
       - dark-factory-network
 

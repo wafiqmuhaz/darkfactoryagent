@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { apiClient } from '../api/client';
 import { Button } from '../components/common/Button';
 import { Spinner } from '../components/common/Spinner';
-import { DollarSign, TrendingUp, AlertTriangle, Plus, Edit3 } from 'lucide-react';
+import { DollarSign, AlertTriangle, Plus } from 'lucide-react';
 
 interface CostSummary {
   period: string;
