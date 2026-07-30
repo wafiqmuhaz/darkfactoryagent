@@ -42,7 +42,7 @@ export const SkillsStore = () => {
   const loadSkills = async () => {
     setIsLoading(true);
     try {
-      const res = await apiClient.get('/skills');
+      const res = await apiClient.get('/skills/store');
       setSkills(res.data.skills || []);
     } catch {
       setSkills([]);
@@ -191,18 +191,19 @@ export const SkillsStore = () => {
 
                 <div className="flex items-center justify-between pt-2 border-t border-border">
                   <span className="text-xs text-muted-foreground">{skill.author}</span>
-                  {skill.isInstalled ? (
-                    <div className="flex gap-2">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => handleUninstall(skill.name)}
-                        isLoading={isInstalling}
-                        disabled={skill.isBuiltIn}
-                      >
-                        <X className="w-3 h-3 mr-1" /> Uninstall
-                      </Button>
-                    </div>
+                  {skill.isBuiltIn ? (
+                    <span className="text-xs text-muted-foreground">
+                      Built in · {skill.isEnabled ? 'enabled' : 'disabled'} on the Skills page
+                    </span>
+                  ) : skill.isInstalled ? (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => handleUninstall(skill.name)}
+                      isLoading={isInstalling}
+                    >
+                      <X className="w-3 h-3 mr-1" /> Uninstall
+                    </Button>
                   ) : (
                     <Button
                       size="sm"

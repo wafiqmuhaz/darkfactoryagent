@@ -31,6 +31,7 @@ import { auditLogger } from './middleware/auditLogger';
 import { apiRateLimiter } from './middleware/rateLimiter';
 
 import { initQueueWorker } from './orchestrator/queue';
+import { initSkills } from './skills';
 
 const app = express();
 const httpServer = createServer(app);
@@ -114,6 +115,9 @@ if (MODE === 'worker' || MODE === 'monolith') {
   workerInstance = initQueueWorker();
   logger.info(`Initialized BullMQ Background Worker (Mode: ${MODE})`);
 }
+
+// Register built-in skills and restore their persisted enabled/disabled state.
+initSkills().catch((err) => logger.error(`Skill initialization failed: ${err.message}`));
 
 httpServer.listen(PORT, () => {
   logger.info(`Server is running on port ${PORT} [Mode: ${MODE}]`);

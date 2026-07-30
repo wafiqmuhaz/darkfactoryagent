@@ -3,13 +3,19 @@ import path from 'path';
 import { SkillDefinition } from '../skill-registry';
 
 export const fileSystemSkill: SkillDefinition = {
-  name: 'fileSystem',
-  description: 'Read and write files within a project directory',
-  execute: async (input: { action: 'read' | 'write' | 'delete'; filePath: string; content?: string }) => {
-    // In a real implementation, we must sandbox this to prevent directory traversal.
-    // E.g., verifying that filePath is inside the designated project root.
-    const resolvedPath = path.resolve(process.cwd(), input.filePath);
-    
+  name: 'file-system',
+  description: 'Read, write, and manage files on the local filesystem',
+  category: 'filesystem',
+  version: '1.0.0',
+  execute: async (input: { action: 'read' | 'write' | 'delete'; filePath: string; content?: string; baseDir?: string }) => {
+    // Confine the operation to baseDir when one is given, so a traversing
+    // filePath cannot reach outside the project it was scoped to.
+    const base = input.baseDir ? path.resolve(input.baseDir) : process.cwd();
+    const resolvedPath = path.resolve(base, input.filePath);
+    if (!resolvedPath.startsWith(base + path.sep) && resolvedPath !== base) {
+      throw new Error(`Path escapes the allowed directory: ${input.filePath}`);
+    }
+
     switch (input.action) {
       case 'read':
         return await fs.readFile(resolvedPath, 'utf-8');
@@ -24,5 +30,5 @@ export const fileSystemSkill: SkillDefinition = {
       default:
         throw new Error(`Unsupported action: ${(input as any).action}`);
     }
-  }
+  },
 };

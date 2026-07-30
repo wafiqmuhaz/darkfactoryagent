@@ -1,13 +1,15 @@
 import { SkillDefinition } from '../skill-registry';
 
 export const browserUseSkill: SkillDefinition = {
-  name: 'browserUse',
-  description: 'Automate web browser interactions',
+  name: 'browser-use',
+  description: 'Web automation — navigate, click, extract, screenshot',
+  category: 'browser',
+  version: '1.0.0',
   execute: async (input: { url: string; action: string; selector?: string }) => {
-    // This is a stub for the browser-use skill which would utilize Playwright or Puppeteer
+    // Stub: a real implementation would drive Playwright or Puppeteer here.
     return {
       success: true,
-      data: { message: 'Mocked browser interaction', url: input.url }
+      data: { message: 'Mocked browser interaction', url: input.url },
     };
-  }
+  },
 };

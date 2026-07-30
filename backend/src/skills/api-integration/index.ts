@@ -1,14 +1,15 @@
 import { SkillDefinition } from '../skill-registry';
 
 export const apiIntegrationSkill: SkillDefinition = {
-  name: 'apiIntegration',
-  description: 'Make HTTP requests to external services',
+  name: 'api-integration',
+  description: 'HTTP requests, GraphQL, file upload/download',
+  category: 'api',
+  version: '1.0.0',
   execute: async (input: { method: string; url: string; headers?: any; data?: any }) => {
-    // In a real implementation, use Axios with rate-limiting and circuit breakers
-    // For now, this is a mock implementation
+    // Stub: a real implementation would use Axios with rate limiting and circuit breakers.
     return {
       status: 200,
-      data: { message: 'Mocked API response', originalInput: input }
+      data: { message: 'Mocked API response', originalInput: input },
     };
-  }
+  },
 };
