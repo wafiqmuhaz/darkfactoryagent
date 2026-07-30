@@ -2,209 +2,168 @@
 
 ## Overview
 
-Adapters provide a unified interface for executing AI agent tasks through different backends. Each adapter implements the `BaseAdapter` interface with `probe()`, `execute()`, and `getModels()` methods.
+Adapters give agents a single way to run work through different CLI harnesses. Each adapter extends `BaseAdapter`, which handles runtime detection, the live probe, and task execution; the adapter itself only declares its binary name, argv shape, and pricing.
 
 ```
  ┌───────────────────────────────────────────────────────────┐
  │                    ADAPTER LAYER                           │
  ├───────────────────────────────────────────────────────────┤
- │                                                           │
- │  ┌─────────────┐  ┌─────────────┐  ┌─────────────────┐  │
- │  │ Claude Code │  │   Codex     │  │  Other Adapters  │  │
- │  │   Adapter   │  │  Adapter    │  │  (Gemini, etc.)  │  │
- │  └──────┬──────┘  └──────┬──────┘  └────────┬────────┘  │
- │         │                │                   │           │
- │  ┌──────▼────────────────▼───────────────────▼────────┐  │
- │  │                BaseAdapter Interface                │  │
- │  │  probe(): ProbeResult                              │  │
- │  │  execute(task): ExecutionResult                     │  │
- │  │  getModels(): string[]                              │  │
- │  └─────────────────────────────────────────────────────┘  │
- │                                                           │
+ │  ┌─────────────┐  ┌─────────────┐                         │
+ │  │ Claude Code │  │   Codex     │   ← declare argv + cost  │
+ │  └──────┬──────┘  └──────┬──────┘                         │
+ │         │                │                                 │
+ │  ┌──────▼────────────────▼──────────────────────────────┐  │
+ │  │                  BaseAdapter                          │  │
+ │  │  detectRuntime()  local PATH → docker ps → none      │  │
+ │  │  probe()          version + live "hello" round-trip   │  │
+ │  │  execute(task)    runs in the project's cwd           │  │
+ │  └───────────────────────────────────────────────────────┘  │
+ │         │                                                   │
+ │  ┌──────▼──────────────────────────────────────────────┐   │
+ │  │ AdapterManager — registry + executeWithFallback()    │   │
+ │  └──────────────────────────────────────────────────────┘   │
  └───────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## Supported Adapters
+## Runtime detection (local vs Docker)
 
-| Adapter | Type | Command | Probe Method |
-|---------|------|---------|-------------|
-| Claude Code CLI | CLI | `claude` | `claude --version` |
-| Codex | CLI | `codex` | `codex --version` |
-| Gemini CLI | CLI | `gemini` | `which gemini` |
-| Hermes | CLI | `hermes` | Accessible via Claude Code |
-| Ollama | API | N/A | `curl localhost:11434` |
-| OpenCode | CLI | `opencode` | `which opencode` |
-| Cursor | API | N/A | Check config |
+The probe never assumes where the CLI lives. `detectRuntime()` checks, in order:
+
+1. **Host PATH** — `command -v claude` / `command -v codex`. Result: `runtime: "local"`.
+2. **Running containers** — `docker ps`, then `docker exec <name> sh -lc 'command -v <cli>'` for each. First hit wins. Result: `runtime: "docker"`, with the container name recorded.
+3. **Neither** — `runtime: "none"`, and the probe returns an install hint instead of a generic failure.
+
+When the CLI is only in a container, every subsequent command is wrapped:
+
+```
+docker exec -w <project path> <container> sh -lc '<cli> …'
+```
+
+The backend image installs both CLIs directly (see `backend/Dockerfile`), so in Docker Compose mode the adapters resolve as `local` *inside* the backend container. The container-scanning path covers setups where the CLIs live in a separate sidecar instead.
 
 ---
 
-## Claude Code CLI Adapter
+## The live probe ("Test now")
 
-### Location: `backend/src/adapters/claude-code/`
+A probe reports `ready` only when the CLI actually answered — not merely when the binary exists.
 
-### Probe Implementation
-```typescript
-// Probe checks:
-// 1. CLI installed: which claude
-// 2. Version: claude --version
-// 3. Can respond: claude --print "hello"
-// 4. API access: claude list-models (or similar)
+| Step | What runs | Failure handling |
+|------|-----------|------------------|
+| 1. Locate | `command -v <cli>`, then container scan | `none` → install hint |
+| 2. Version | `<cli> --version` | informational only; never fails the probe |
+| 3. Live check | one-shot prompt: *"Respond with exactly the single word: hello"* | any error → `status: error` with a mapped message |
 
-export class ClaudeCodeAdapter extends BaseAdapter {
-  async probe(): Promise<ProbeResult> {
-    try {
-      const whichResult = execSync('which claude', { encoding: 'utf8' });
-      const versionResult = execSync('claude --version', { encoding: 'utf8' });
-      const helloResult = execSync('echo "hello" | claude --print -', { 
-        encoding: 'utf8', 
-        timeout: 30000 
-      });
+Two details make this reliable:
 
-      return {
-        status: 'ready',
-        version: versionResult.trim(),
-        path: whichResult.trim(),
-        message: `Claude Code CLI v${versionResult.trim()} ready`,
-      };
-    } catch (error: any) {
-      return {
-        status: 'error',
-        version: null,
-        path: null,
-        message: `Claude CLI not found or not responding: ${error.message}`,
-        error: error.message,
-      };
-    }
-  }
+- **stdin is closed** (`< /dev/null`). Codex reads stdin when no prompt is detected, which otherwise hangs the probe until timeout.
+- **The answer is read from a file, not scraped from stdout**, for CLIs that stream progress logs. An adapter puts `OUTPUT_FILE_TOKEN` in its argv and `BaseAdapter` substitutes a temp path, reads it back, and deletes it.
 
-  async execute(task: AdapterTask): Promise<ExecutionResult> {
-    // Execute a task through Claude Code CLI
-    const prompt = buildPrompt(task);
-    const result = execSync(`echo "${escape(prompt)}" | claude --print -`, {
-      encoding: 'utf8',
-      timeout: 120000,
-    });
+Probes run **read-only**. Only real task execution passes `allowWrites: true`.
 
-    return {
-      success: true,
-      output: result,
-      tokenUsage: { input: 0, output: 0 }, // estimate or parse
-    };
-  }
-}
-```
+### Response shape
 
-### Error Handling
-| Error | Cause | Recovery |
-|-------|-------|----------|
-| `CLI not found` | `claude` not in PATH | Prompt to install (`npm i -g @anthropic-ai/claude-code`) |
-| `402 insufficient balance` | API quota exhausted | Display error, suggest fallback adapter |
-| `Command timeout` | Task too long | Increase timeout, or split task |
-| `Authorization error` | API key invalid | Re-enter API key in Settings |
-
----
-
-## Codex CLI Adapter
-
-### Location: `backend/src/adapters/codex/`
-
-### Probe Implementation
-```typescript
-export class CodexAdapter extends BaseAdapter {
-  async probe(): Promise<ProbeResult> {
-    try {
-      const whichResult = execSync('which codex', { encoding: 'utf8' });
-      const versionResult = execSync('codex --version', { encoding: 'utf8' });
-
-      return {
-        status: 'ready',
-        version: versionResult.trim(),
-        path: whichResult.trim(),
-        message: `Codex CLI v${versionResult.trim()} ready`,
-      };
-    } catch (error: any) {
-      return {
-        status: 'error',
-        version: null,
-        path: null,
-        message: `Codex CLI not found: ${error.message}`,
-        error: error.message,
-      };
-    }
-  }
-}
-```
-
-### Environment Variables
-```env
-# Codex Configuration
-CODEX_API_KEY=           # Optional, uses default auth if empty
-CODEX_MODEL=gpt-4o       # Model override
-CODEX_TIMEOUT=120000     # Execution timeout in ms
-```
-
----
-
-## Probe API
-
-### `POST /api/adapters/probe`
-
-```json
-{
-  "adapterId": "claude-code",
-  "timeout": 30000
-}
-```
-
-**Response (Success):**
 ```json
 {
   "status": "ready",
-  "version": "0.8.0",
-  "path": "/usr/local/bin/claude",
-  "message": "Claude Code CLI v0.8.0 ready",
-  "models": ["claude-sonnet-4", "claude-haiku-3.5"]
+  "version": "2.0.71 (Claude Code)",
+  "path": "/opt/homebrew/bin/claude",
+  "runtime": "local",
+  "message": "Claude Code v2.0.71 responded via local.",
+  "helloResponse": "hello",
+  "models": ["auto", "opus", "sonnet", "haiku"]
 }
 ```
 
-**Response (Error):**
-```json
-{
-  "status": "error",
-  "version": null,
-  "path": null,
-  "message": "Claude CLI not found. Install with: npm i -g @anthropic-ai/claude-code",
-  "error": "Command failed: which claude"
-}
-```
+On failure the same shape carries `error`, a human-readable `message`, and `installHint`.
 
 ---
 
-## Execution Flow
+## Adapter reference
 
-```
- ┌──────────┐    ┌───────────┐    ┌──────────────┐    ┌────────────┐
- │   Task    │───→│  Adapter  │───→│  CLI/Process │───→│  Result    │
- │  Created  │    │  Manager  │    │  Execution   │    │  Parsed    │
- └──────────┘    └───────────┘    └──────────────┘    └────────────┘
-                      │                   │                   │
-                      ▼                   ▼                   ▼
-                 ┌──────────┐      ┌──────────────┐     ┌──────────┐
-                 │  Probe   │      │  stdout/     │     │ Cost     │
-                 │  Check   │      │  stderr      │     │ Tracked  │
-                 └──────────┘      └──────────────┘     └──────────┘
-```
+| | Claude Code | Codex |
+|---|---|---|
+| Binary | `claude` | `codex` |
+| One-shot mode | `claude -p <prompt>` | `codex exec <prompt>` |
+| Answer channel | stdout | `-o <file>` |
+| System prompt | `--append-system-prompt` | prepended to the prompt |
+| Model flag | `--model` | `--model` |
+| Write access | `--permission-mode acceptEdits --add-dir <cwd>` | `--sandbox workspace-write` |
+| Read-only | default | `--sandbox read-only` |
+| Install | `npm i -g @anthropic-ai/claude-code` | `npm i -g @openai/codex` |
+
+Models are listed per adapter with `auto` first, which lets the CLI pick its own default.
 
 ---
 
-## Fallback Strategy
+## Task execution
 
-| Primary | Fallback 1 | Fallback 2 |
-|---------|-----------|------------|
-| Claude Code CLI | Codex CLI | Ollama (local) |
-| Codex CLI | Hermes | Ollama (local) |
-| Gemini CLI | Claude Code CLI | Ollama (local) |
+`TaskExecutionService.executeTask(taskId)` is the path from a board card to a code change:
 
-The fallback chain is configurable in Settings → Adapters.
+```
+ task created ──→ BullMQ "adapter-exec" ──→ TaskExecutionService
+                        │ (Redis down? runs inline instead)
+                        ▼
+        budget check ──→ AgentRun(running) ──→ adapter CLI in project.path
+                        │
+                        ▼
+        artifact + CostLedger + Activity ──→ task status: review | failed
+```
+
+- The CLI's working directory is the project's `path`, so the agent edits the real repository.
+- `allowWrites: true` is set here and only here.
+- The reply is stored as an `Artifact` attached to the task, so it is visible in the UI.
+- Token counts are estimated from character length (CLI harnesses do not report usage), and the cost is written to `CostLedger`.
+- If the active budget is already exhausted, the task is failed before any spend occurs.
+
+---
+
+## Error mapping
+
+Raw CLI stderr is noisy — banners, `workdir:` lines, reconnect spam. `extractFailureLine()` strips that preamble and picks the line that actually explains the failure, then `describeCliFailure()` maps it:
+
+| Signal in stderr | Message shown to the user |
+|---|---|
+| `402`, `insufficient balance`, `insufficient_quota` | insufficient balance or quota — top up or switch adapters |
+| `401`, `unauthorized`, `invalid api key`, `not logged in` | re-authenticate the CLI (`claude login` / `codex login`) or update the key in Settings → Secrets |
+| `429`, `rate limit` | rate limited — retry or switch adapters |
+| `econnrefused`, `error sending request`, `stream disconnected` | cannot reach the configured API endpoint — check the CLI's provider config |
+| `etimedout`, `sigterm` | timed out — raise the timeout or check the network |
+| `enotfound`, `network` | cannot resolve the API host |
+| command not found | install hint for that adapter |
+
+---
+
+## Fallback
+
+`AdapterManager.executeWithFallback(preferredId, task)` tries the project's adapter first, then every other registered adapter in turn. The result reports `adapterUsed` and `fellBack`, and the activity log records the substitution so a silent switch is never invisible.
+
+| Primary | Falls back to |
+|---------|---------------|
+| Claude Code | Codex |
+| Codex | Claude Code |
+
+---
+
+## Configuration
+
+```env
+ADAPTER_DEFAULT=claude-code   # used when a project has no adapter set
+```
+
+Per-project overrides live on the `Project` record (`adapterType`, `adapterModel`) and are set in the project wizard's "Connect a model" step.
+
+In Docker Compose mode, host CLI credentials are shared into the containers:
+
+```yaml
+volumes:
+  - ${HOME}/.claude:/root/.claude
+  - ${HOME}/.codex:/root/.codex
+environment:
+  - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+  - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+```
+
+Project paths must also be mounted into the backend container, or the CLI will run against a directory that does not exist inside it.
+

@@ -1,6 +1,9 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { taskService } from '../services/task.service';
+import { taskExecutionService } from '../services/task-execution.service';
+import { taskQueue } from '../orchestrator/queue';
+import { logger } from '../utils/logger';
 import { authMiddleware, AuthRequest } from '../middleware/auth';
 
 const router = Router();
@@ -11,8 +14,11 @@ const createTaskSchema = z.object({
   description: z.string().optional(),
   status: z.string().optional(),
   priority: z.string().optional(),
+  type: z.string().optional(),
   projectId: z.string().uuid(),
   parentTaskId: z.string().uuid().optional(),
+  /** When true, hand the task straight to the project's adapter CLI. */
+  autoRun: z.boolean().optional(),
 });
 
 const updateTaskSchema = z.object({
@@ -29,13 +35,51 @@ const updateStatusSchema = z.object({
 
 router.post('/', async (req: AuthRequest, res, next) => {
   try {
-    const input = createTaskSchema.parse(req.body);
-    const result = await taskService.createTask(input);
-    res.status(201).json(result);
+    const { autoRun, ...input } = createTaskSchema.parse(req.body);
+    const task = await taskService.createTask(input);
+
+    // Creating a task is the trigger: queue it for the adapter CLI unless told otherwise.
+    if (autoRun !== false) {
+      try {
+        await taskQueue.add(
+          'adapter-exec',
+          { agentType: 'adapter-exec', taskId: task.id, projectId: task.projectId },
+          { priority: priorityToQueueWeight(task.priority) }
+        );
+      } catch (queueError: any) {
+        // Redis unavailable — run inline so the task still executes.
+        logger.warn(`Queue unavailable (${queueError.message}); running task ${task.id} inline`);
+        void taskExecutionService
+          .executeTask(task.id)
+          .catch((err) => logger.error(`Inline execution failed for ${task.id}: ${err.message}`));
+      }
+    }
+
+    res.status(201).json(task);
   } catch (error) {
     next(error);
   }
 });
+
+// POST /api/tasks/:id/run — manually (re)run a task through the adapter CLI
+router.post('/:id/run', async (req: AuthRequest, res, next) => {
+  try {
+    const id = req.params.id as string;
+    const result = await taskExecutionService.executeTask(id);
+    res.status(result.success ? 200 : 502).json(result);
+  } catch (error) {
+    next(error);
+  }
+});
+
+function priorityToQueueWeight(priority: string): number {
+  switch (priority) {
+    case 'critical': return 1;
+    case 'high': return 2;
+    case 'medium': return 3;
+    default: return 4;
+  }
+}
 
 router.get('/', async (req: AuthRequest, res, next) => {
   try {

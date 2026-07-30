@@ -28,13 +28,14 @@ export const taskQueue = new Queue('dark-factory-tasks', {
 });
 
 import { dataLakeService } from '../services/datalake.service';
+import { taskExecutionService } from '../services/task-execution.service';
 
 export const initQueueWorker = () => {
   const worker = new Worker(
     'dark-factory-tasks',
     async (job: Job) => {
       logger.info(`Processing job ${job.id} for task ${job.data.taskId} (Attempt: ${job.attemptsMade + 1})`);
-      
+
       const context: AgentContext = {
         projectId: job.data.projectId,
         taskId: job.data.taskId,
@@ -42,10 +43,19 @@ export const initQueueWorker = () => {
       };
 
       try {
+        // Adapter-backed execution: hand the task to Claude Code / Codex.
+        if (job.data.agentType === 'adapter-exec') {
+          const result = await taskExecutionService.executeTask(job.data.taskId);
+          if (!result.success) {
+            throw new Error(result.error || 'Adapter execution failed');
+          }
+          return result;
+        }
+
         if (job.data.agentType === 'chief-of-staff') {
           return await chiefOfStaffAgent.execute(context, job.data.input);
         }
-        
+
         throw new Error(`Unknown agent type: ${job.data.agentType}`);
       } catch (error: any) {
         logger.error(`Job ${job.id} failed: ${error.message}`);

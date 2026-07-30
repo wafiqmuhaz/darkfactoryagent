@@ -2,24 +2,14 @@ import { useState, useEffect } from 'react';
 import { useAuthStore } from '../store';
 import { apiClient } from '../api/client';
 import { Button } from './common/Button';
+import { AdapterPicker } from './AdapterPicker';
+import type { ProbeResult } from './AdapterPicker';
 import {
   Building2, Target, UserCircle, Plug, CheckCircle2,
-  ChevronRight, ChevronLeft, Loader2, AlertCircle,
-  CheckCircle, XCircle
+  ChevronRight, ChevronLeft, AlertCircle
 } from 'lucide-react';
 
 type Step = 'company' | 'mission' | 'agent' | 'adapter' | 'review';
-
-interface AdapterInfo {
-  id: string;
-  name: string;
-  description: string;
-  type: string;
-  probeStatus: 'ready' | 'error' | 'not_tested';
-  probeError?: string;
-  isConnected?: boolean;
-  models?: string[];
-}
 
 export const OnboardingWizard = () => {
   const [isOpen, setIsOpen] = useState(false);
@@ -43,10 +33,9 @@ export const OnboardingWizard = () => {
   const [agentName, setAgentName] = useState('Chief of Staff');
 
   // Step 4: Adapter
-  const [adapters, setAdapters] = useState<AdapterInfo[]>([]);
-  const [selectedAdapter, setSelectedAdapter] = useState<string | null>(null);
-  const [probingAdapter, setProbingAdapter] = useState<string | null>(null);
-  const [probeResults, setProbeResults] = useState<Record<string, any>>({});
+  const [selectedAdapter, setSelectedAdapter] = useState<string>('claude-code');
+  const [selectedModel, setSelectedModel] = useState('auto');
+  const [probeResults, setProbeResults] = useState<Record<string, ProbeResult>>({});
 
   // Check onboarding status on mount
   useEffect(() => {
@@ -84,26 +73,6 @@ export const OnboardingWizard = () => {
     }
   };
 
-  // Load adapters when step becomes adapter
-  useEffect(() => {
-    if (currentStep === 'adapter') {
-      loadAdapters();
-    }
-  }, [currentStep]);
-
-  const loadAdapters = async () => {
-    try {
-      const res = await apiClient.get('/adapters');
-      setAdapters(res.data.adapters || []);
-    } catch {
-      // Fallback adapters list
-      setAdapters([
-        { id: 'claude-code', name: 'Claude Code CLI', description: 'Anthropic Claude Code CLI — local agent execution with Claude models', type: 'cli', probeStatus: 'not_tested' },
-        { id: 'codex', name: 'Codex CLI', description: 'OpenAI Codex CLI — code generation with GPT models', type: 'cli', probeStatus: 'not_tested' },
-      ]);
-    }
-  };
-
   const handleNext = async () => {
     setError(null);
     setIsLoading(true);
@@ -127,11 +96,11 @@ export const OnboardingWizard = () => {
         case 'adapter':
           if (!selectedAdapter) { setError('Please select an adapter'); setIsLoading(false); return; }
           if (probeResults[selectedAdapter]?.status !== 'ready') {
-            setError('Please test the adapter first with "Test now"');
+            setError('Run the environment check with "Test now" — the adapter has to respond before you continue.');
             setIsLoading(false);
             return;
           }
-          await apiClient.post('/onboarding/adapter', { adapterId: selectedAdapter });
+          await apiClient.post('/onboarding/adapter', { adapterId: selectedAdapter, model: selectedModel });
           break;
         case 'review':
           await apiClient.post('/onboarding/review');
@@ -158,22 +127,6 @@ export const OnboardingWizard = () => {
       const prevIdx = currentIdx - 1;
       setCurrentStep(steps[prevIdx]);
       setStepIndex(prevIdx);
-    }
-  };
-
-  const handleProbeAdapter = async (adapterId: string) => {
-    setProbingAdapter(adapterId);
-    setProbeResults(prev => ({ ...prev, [adapterId]: { status: 'testing' } }));
-    try {
-      const res = await apiClient.post('/adapters/probe', { adapterId });
-      setProbeResults(prev => ({ ...prev, [adapterId]: res.data }));
-    } catch (err: any) {
-      setProbeResults(prev => ({
-        ...prev,
-        [adapterId]: { status: 'error', message: err.response?.data?.error || err.message, error: err.message }
-      }));
-    } finally {
-      setProbingAdapter(null);
     }
   };
 
@@ -363,93 +316,20 @@ export const OnboardingWizard = () => {
               <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-4">
                 <Plug className="w-8 h-8 text-primary" />
               </div>
-              <h2 className="text-2xl font-bold">Connect a Model</h2>
-              <p className="text-muted-foreground mt-2">Select the AI adapter for agent execution</p>
+              <h2 className="text-2xl font-bold">Connect a model</h2>
+              <p className="text-muted-foreground mt-2">
+                Pick the adapter and model your lead will run on, then check the environment.
+              </p>
             </div>
 
-            <div className="space-y-3 max-h-80 overflow-y-auto">
-              {adapters.map((adapter) => {
-                const probeResult = probeResults[adapter.id];
-                const isProbing = probingAdapter === adapter.id;
-                const isSelected = selectedAdapter === adapter.id;
-                const status = probeResult?.status || adapter.probeStatus;
-
-                return (
-                  <div
-                    key={adapter.id}
-                    onClick={() => setSelectedAdapter(adapter.id)}
-                    className={`p-4 rounded-lg border cursor-pointer transition-all ${
-                      isSelected ? 'border-primary bg-primary/5 ring-2 ring-primary/20' : 'border-border hover:border-primary/50'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="flex items-center gap-3">
-                        <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${isSelected ? 'border-primary' : 'border-muted-foreground'}`}>
-                          {isSelected && <div className="w-2.5 h-2.5 rounded-full bg-primary" />}
-                        </div>
-                        <div>
-                          <div className="font-medium">{adapter.name}</div>
-                          <div className="text-xs text-muted-foreground">{adapter.description}</div>
-                        </div>
-                      </div>
-
-                      {/* Status indicator */}
-                      {status === 'ready' && (
-                        <div className="flex items-center gap-1 text-xs text-green-600 dark:text-green-400">
-                          <CheckCircle className="w-3.5 h-3.5" /> Ready
-                        </div>
-                      )}
-                      {status === 'error' && (
-                        <div className="flex items-center gap-1 text-xs text-destructive">
-                          <XCircle className="w-3.5 h-3.5" /> Error
-                        </div>
-                      )}
-                      {status === 'not_tested' && (
-                        <div className="text-xs text-muted-foreground">Not tested</div>
-                      )}
-                      {isProbing && (
-                        <Loader2 className="w-4 h-4 animate-spin text-primary" />
-                      )}
-                    </div>
-
-                    {/* Probe button — always visible */}
-                    <div className="mt-2 flex items-center justify-end">
-                      <button
-                        onClick={(e) => { e.stopPropagation(); handleProbeAdapter(adapter.id); }}
-                        disabled={isProbing}
-                        className="text-xs px-3 py-1.5 rounded-md border border-border hover:bg-secondary transition-colors disabled:opacity-50"
-                      >
-                        {isProbing ? 'Testing...' : 'Test now'}
-                      </button>
-                    </div>
-
-                    {/* Probe result detail */}
-                    {probeResult && probeResult.status === 'ready' && (
-                      <div className="mt-2 p-2 bg-green-500/5 border border-green-500/20 rounded text-xs text-green-700 dark:text-green-300">
-                        ✅ {probeResult.message}
-                        {probeResult.version && <span className="ml-1">(v{probeResult.version})</span>}
-                      </div>
-                    )}
-                    {probeResult && probeResult.status === 'error' && (
-                      <div className="mt-2 p-2 bg-destructive/5 border border-destructive/20 rounded text-xs text-destructive">
-                        ❌ {probeResult.message || probeResult.error}
-                      </div>
-                    )}
-                    {probeResult && probeResult.status === 'testing' && (
-                      <div className="mt-2 p-2 bg-muted rounded text-xs text-muted-foreground flex items-center gap-2">
-                        <Loader2 className="w-3 h-3 animate-spin" /> Probing adapter...
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-
-            {selectedAdapter && probeResults[selectedAdapter]?.models && (
-              <div className="text-xs text-muted-foreground text-center">
-                Available models: {probeResults[selectedAdapter].models?.join(', ')}
-              </div>
-            )}
+            <AdapterPicker
+              selectedAdapter={selectedAdapter}
+              onSelectAdapter={(id) => { setSelectedAdapter(id); setSelectedModel('auto'); }}
+              selectedModel={selectedModel}
+              onSelectModel={setSelectedModel}
+              probeResults={probeResults}
+              onProbeResult={(id, result) => setProbeResults((prev) => ({ ...prev, [id]: result }))}
+            />
           </div>
         );
 
@@ -504,7 +384,11 @@ export const OnboardingWizard = () => {
                   <div>
                     <div className="text-sm font-medium">Model</div>
                     <div className="text-xs text-muted-foreground">
-                      {selectedAdapter || 'None'} — {probeResults[selectedAdapter ?? '']?.status === 'ready' ? 'Ready' : 'Not tested'}
+                      {selectedAdapter} · {selectedModel === 'auto' ? 'Auto' : selectedModel}
+                      {' — '}
+                      {probeResults[selectedAdapter]?.status === 'ready'
+                        ? `Ready${probeResults[selectedAdapter]?.runtime === 'docker' ? ' (Docker)' : ''}`
+                        : 'Not checked'}
                     </div>
                   </div>
                 </div>

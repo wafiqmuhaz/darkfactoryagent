@@ -27,6 +27,9 @@ services:
       - ADAPTER_DEFAULT=claude-code
       - COST_MAX_BUDGET=10
       - ROUTINE_TIMEZONE=UTC
+      # Adapter CLI credentials — set these in your shell or a .env file next to this compose file.
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
     depends_on:
       - redis
     volumes:
@@ -34,6 +37,9 @@ services:
       - datalake_data:/app/datalake
       # Mount local projects so the agent can access them inside the container
       - /Users/putramac/Documents/GitHub:/Users/putramac/Documents/GitHub
+      # Adapter CLI auth/config, so `claude` and `codex` inside the container reuse host logins
+      - ${HOME}/.claude:/root/.claude
+      - ${HOME}/.codex:/root/.codex
     networks:
       - dark-factory-network
 
@@ -51,12 +57,16 @@ services:
       - REDIS_PORT=6379
       - ADAPTER_DEFAULT=claude-code
       - COST_MAX_BUDGET=10
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
     depends_on:
       - redis
     volumes:
       - ./backend/prisma:/app/prisma
       - datalake_data:/app/datalake
       - /Users/putramac/Documents/GitHub:/Users/putramac/Documents/GitHub
+      - ${HOME}/.claude:/root/.claude
+      - ${HOME}/.codex:/root/.codex
     networks:
       - dark-factory-network
 
@@ -82,20 +92,9 @@ services:
     networks:
       - dark-factory-network
 
-  # Adapter service container (CLI-based adapters)
-  adapter-claude-code:
-    image: node:22-alpine
-    profiles:
-      - adapters
-    command: >
-      sh -c "
-      npm i -g @anthropic-ai/claude-code 2>/dev/null || echo 'Claude Code CLI install skipped';
-      tail -f /dev/null
-      "
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
-    networks:
-      - dark-factory-network
+  # Adapter CLIs are installed directly in the backend image (see backend/Dockerfile),
+  # so no sidecar is required. The probe still checks running containers as a fallback,
+  # which covers setups where the CLIs live in a separate container instead.
 
 volumes:
   redis_data:

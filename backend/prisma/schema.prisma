@@ -37,6 +37,8 @@ model Project {
   branch      String   @default("main")
   language    String?               // Primary language (e.g., "typescript")
   framework   String?               // Framework (e.g., "react", "express")
+  adapterType String?  @map("adapter_type") // "claude-code" | "codex" | etc.
+  adapterModel String? @map("adapter_model") // "auto" or a specific model id
   isActive    Boolean  @default(true) @map("is_active")
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
@@ -387,6 +389,7 @@ model Adapter {
   command     String?                   // CLI command path
   envVars     String?                   // JSON of required env vars
   version     String?                   // Detected CLI version
+  runtime     String?                   // "local" | "docker" | "none" — where the CLI was found
   models      String?                   // JSON array of supported models
   isConnected Boolean    @default(false) @map("is_connected")
   lastProbeAt DateTime?  @map("last_probe_at")

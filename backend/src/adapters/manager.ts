@@ -2,45 +2,40 @@ import { BaseAdapter, ProbeResult, AdapterTask, ExecutionResult } from './base-a
 import { claudeCodeAdapter } from './claude-code';
 import { codexAdapter } from './codex';
 
-// Additional adapters can be imported here
-// import { geminiAdapter } from './gemini';
-// import { hermesAdapter } from './hermes';
-// import { ollamaAdapter } from './ollama';
-
-type AdapterEntry = {
+export interface AdapterDescriptor {
   id: string;
   name: string;
   description: string;
   type: string;
-  adapter: BaseAdapter;
-};
+  /** Shown as a "Recommended" chip in the adapter picker. */
+  recommended: boolean;
+  installHint: string;
+}
+
+type AdapterEntry = AdapterDescriptor & { adapter: BaseAdapter };
 
 class AdapterManager {
-  private adapters: Map<string, AdapterEntry> = new Map();
+  private adapters = new Map<string, AdapterEntry>();
 
   constructor() {
-    this.registerDefaults();
-  }
-
-  private registerDefaults() {
     this.register({
       id: 'claude-code',
-      name: 'Claude Code CLI',
-      description: 'Anthropic Claude Code CLI — local agent execution with Claude models',
+      name: 'Claude Code',
+      description: 'Claude Code CLI harness',
       type: 'cli',
+      recommended: true,
+      installHint: 'npm i -g @anthropic-ai/claude-code',
       adapter: claudeCodeAdapter,
     });
     this.register({
       id: 'codex',
-      name: 'Codex CLI',
-      description: 'OpenAI Codex CLI — code generation and execution with GPT models',
+      name: 'Codex',
+      description: 'Codex CLI harness',
       type: 'cli',
+      recommended: true,
+      installHint: 'npm i -g @openai/codex',
       adapter: codexAdapter,
     });
-    // Future adapters
-    // this.register({ id: 'gemini', name: 'Gemini CLI', description: 'Google Gemini CLI', type: 'cli', adapter: geminiAdapter });
-    // this.register({ id: 'ollama', name: 'Ollama (Local)', description: 'Local LLM via Ollama', type: 'api', adapter: ollamaAdapter });
-    // this.register({ id: 'hermes', name: 'Hermes', description: 'Hermes CLI', type: 'cli', adapter: hermesAdapter });
   }
 
   register(entry: AdapterEntry) {
@@ -51,10 +46,14 @@ class AdapterManager {
     return this.adapters.get(id)?.adapter;
   }
 
-  listAdapters(): Omit<AdapterEntry, 'adapter'>[] {
-    return Array.from(this.adapters.values()).map(({ adapter, ...rest }) => ({
-      ...rest,
-    }));
+  listAdapters(): AdapterDescriptor[] {
+    return Array.from(this.adapters.values()).map(({ adapter: _adapter, ...rest }) => rest);
+  }
+
+  async getModels(id: string): Promise<string[]> {
+    const adapter = this.adapters.get(id)?.adapter;
+    if (!adapter) return [];
+    return adapter.getModels();
   }
 
   async probeAdapter(id: string): Promise<ProbeResult> {
@@ -64,34 +63,51 @@ class AdapterManager {
         status: 'error',
         version: null,
         path: null,
-        message: `Adapter '${id}' not found`,
+        runtime: 'none',
+        message: `Unknown adapter '${id}'.`,
         error: `Unknown adapter: ${id}`,
       };
     }
-    try {
-      const result = await adapter.probe();
-      return result;
-    } catch (error: any) {
-      return {
-        status: 'error',
-        version: null,
-        path: null,
-        message: `Probe failed: ${error.message}`,
-        error: error.message,
-      };
-    }
+    return adapter.probe();
   }
 
   async executeAdapter(id: string, task: AdapterTask): Promise<ExecutionResult> {
     const adapter = this.adapters.get(id)?.adapter;
     if (!adapter) {
-      return {
-        success: false,
-        output: '',
-        error: `Adapter '${id}' not found`,
-      };
+      return { success: false, output: '', error: `Unknown adapter '${id}'.` };
     }
     return adapter.execute(task);
+  }
+
+  /**
+   * Execute on `preferredId`, falling back through the remaining adapters when it
+   * is unavailable. Returns which adapter actually ran.
+   */
+  async executeWithFallback(
+    preferredId: string,
+    task: AdapterTask
+  ): Promise<ExecutionResult & { adapterUsed: string; fellBack: boolean }> {
+    const order = [preferredId, ...Array.from(this.adapters.keys()).filter((id) => id !== preferredId)];
+    let lastError = `No adapter available for '${preferredId}'.`;
+
+    for (const id of order) {
+      const adapter = this.adapters.get(id)?.adapter;
+      if (!adapter) continue;
+
+      const result = await adapter.execute(task);
+      if (result.success) {
+        return { ...result, adapterUsed: id, fellBack: id !== preferredId };
+      }
+      lastError = result.error ?? lastError;
+    }
+
+    return {
+      success: false,
+      output: '',
+      error: lastError,
+      adapterUsed: preferredId,
+      fellBack: false,
+    };
   }
 }
 

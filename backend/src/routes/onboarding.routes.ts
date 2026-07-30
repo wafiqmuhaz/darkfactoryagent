@@ -129,7 +129,7 @@ onboardingRoutes.post('/agent', authenticate, async (req, res) => {
 // POST /api/onboarding/adapter — Step 4: Connect adapter
 onboardingRoutes.post('/adapter', authenticate, async (req, res) => {
   try {
-    const { adapterId } = req.body;
+    const { adapterId, model } = req.body;
     if (!adapterId) return res.status(400).json({ error: 'Adapter ID is required' });
 
     const userId = (req as any).user?.id;
@@ -139,17 +139,27 @@ onboardingRoutes.post('/adapter', authenticate, async (req, res) => {
     const company = await prisma.company.findUnique({ where: { name: session.companyName } });
     if (!company) return res.status(400).json({ error: 'Company not found' });
 
-    await prisma.agent.updateMany({
+    // Record the chosen model on the lead agent's config.
+    const lead = await prisma.agent.findFirst({
       where: { companyId: company.id, type: 'chief-of-staff' },
-      data: { adapterId },
     });
+    if (lead) {
+      const existingConfig = lead.config ? JSON.parse(lead.config) : {};
+      await prisma.agent.update({
+        where: { id: lead.id },
+        data: {
+          adapterId,
+          config: JSON.stringify({ ...existingConfig, adapterModel: model || 'auto' }),
+        },
+      });
+    }
 
     await prisma.onboardingSession.update({
       where: { userId },
-      data: { adapterId, currentStep: 4 },
+      data: { adapterId, adapterName: model || 'auto', currentStep: 4 },
     });
 
-    res.json({ success: true, adapterId });
+    res.json({ success: true, adapterId, model: model || 'auto' });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }

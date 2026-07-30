@@ -28,6 +28,7 @@ export interface CreateTaskInput {
   description?: string;
   status?: string;
   priority?: string;
+  type?: string;
   projectId: string;
   parentTaskId?: string;
 }
@@ -57,6 +58,7 @@ export class TaskService {
         description: input.description,
         status: input.status || TaskStatus.BACKLOG,
         priority: input.priority || TaskPriority.MEDIUM,
+        type: input.type || 'feature',
         projectId: input.projectId,
         parentId: input.parentTaskId,
       },

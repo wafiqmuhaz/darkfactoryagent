@@ -13,6 +13,8 @@ export interface CreateProjectInput {
   branch?: string;
   language?: string;
   framework?: string;
+  adapterType?: string;
+  adapterModel?: string;
   ownerId: string;
 }
 
@@ -33,6 +35,8 @@ export class ProjectService {
         branch: input.branch || 'main',
         language: input.language,
         framework: input.framework,
+        adapterType: input.adapterType,
+        adapterModel: input.adapterModel,
         ownerId: input.ownerId,
       },
     });
@@ -91,6 +95,8 @@ export class ProjectService {
         branch: data.branch,
         language: data.language,
         framework: data.framework,
+        adapterType: data.adapterType,
+        adapterModel: data.adapterModel,
       },
     });
   }

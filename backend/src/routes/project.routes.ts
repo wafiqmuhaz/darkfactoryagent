@@ -11,6 +11,8 @@ const createProjectSchema = z.object({
   description: z.string().optional(),
   localPath: z.string().min(1),
   githubRepoUrl: z.string().url().optional(),
+  adapterType: z.string().optional(),
+  adapterModel: z.string().optional(),
 });
 
 const updateProjectSchema = z.object({
@@ -19,6 +21,8 @@ const updateProjectSchema = z.object({
   localPath: z.string().min(1).optional(),
   githubRepoUrl: z.string().url().optional(),
   defaultBranch: z.string().optional(),
+  adapterType: z.string().optional(),
+  adapterModel: z.string().optional(),
 });
 
 router.post('/', async (req: AuthRequest, res, next) => {
@@ -29,6 +33,8 @@ router.post('/', async (req: AuthRequest, res, next) => {
       description: input.description,
       path: input.localPath,
       repoUrl: input.githubRepoUrl,
+      adapterType: input.adapterType,
+      adapterModel: input.adapterModel,
       ownerId: req.userId!,
     });
     res.status(201).json(result);
@@ -66,6 +72,8 @@ router.put('/:id', async (req: AuthRequest, res, next) => {
     if (input.localPath) updateData.path = input.localPath;
     if (input.githubRepoUrl) updateData.repoUrl = input.githubRepoUrl;
     if (input.defaultBranch) updateData.branch = input.defaultBranch;
+    if (input.adapterType) updateData.adapterType = input.adapterType;
+    if (input.adapterModel) updateData.adapterModel = input.adapterModel;
 
     const result = await projectService.update(id, req.userId!, updateData);
     res.status(200).json(result);

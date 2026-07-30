@@ -6,7 +6,9 @@ import { Button } from '../components/common/Button';
 import { Modal } from '../components/common/Modal';
 import { Spinner } from '../components/common/Spinner';
 import { Badge } from '../components/common/Badge';
-import { Plus, Folder, ExternalLink } from 'lucide-react';
+import { AdapterPicker } from '../components/AdapterPicker';
+import type { ProbeResult } from '../components/AdapterPicker';
+import { Plus, Folder, ExternalLink, AlertCircle } from 'lucide-react';
 import { formatDate } from '../utils/helpers';
 
 interface Project {
@@ -15,15 +17,18 @@ interface Project {
   description?: string;
   path?: string;
   repoUrl?: string;
-  aiProvider?: string;
+  adapterType?: string;
+  adapterModel?: string;
   createdAt: string;
 }
 
-const STEPS = ['Project Info', 'Local Path', 'Repository', 'AI Config'];
+const STEPS = ['Project Info', 'Local Path', 'Repository', 'Connect a model'];
 
 export const Projects = () => {
   const [isWizardOpen, setIsWizardOpen] = useState(false);
   const [wizardStep, setWizardStep] = useState(0);
+  const [error, setError] = useState<string | null>(null);
+  const [probeResults, setProbeResults] = useState<Record<string, ProbeResult>>({});
   const setCurrentProject = useProjectStore((s) => s.setCurrentProject);
   const queryClient = useQueryClient();
 
@@ -32,8 +37,8 @@ export const Projects = () => {
     description: '',
     path: '',
     repoUrl: '',
-    aiProvider: 'openai',
-    apiKey: '',
+    adapterType: 'claude-code',
+    adapterModel: 'auto',
   });
 
   const { data: projects, isLoading } = useQuery({
@@ -51,31 +56,58 @@ export const Projects = () => {
         description: form.description,
         localPath: form.path,
         githubRepoUrl: form.repoUrl || undefined,
+        adapterType: form.adapterType,
+        adapterModel: form.adapterModel,
       });
       return res.data;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['projects'] });
-      setIsWizardOpen(false);
-      setWizardStep(0);
-      setForm({ name: '', description: '', path: '', repoUrl: '', aiProvider: 'openai', apiKey: '' });
+      closeWizard();
+    },
+    onError: (err: any) => {
+      setError(err.response?.data?.error || 'Failed to create project');
     },
   });
+
+  const closeWizard = () => {
+    setIsWizardOpen(false);
+    setWizardStep(0);
+    setError(null);
+    setForm({ name: '', description: '', path: '', repoUrl: '', adapterType: 'claude-code', adapterModel: 'auto' });
+  };
 
   const validatePath = async () => {
     try {
       const res = await apiClient.post('/projects/validate-path', { localPath: form.path });
-      return res.data.valid;
+      return res.data.valid as boolean;
     } catch {
       return false;
     }
   };
 
   const handleNext = async () => {
-    if (wizardStep === 1) {
-      const valid = await validatePath();
-      if (!valid) return;
+    setError(null);
+
+    if (wizardStep === 0 && form.name.trim().length < 3) {
+      setError('Project name must be at least 3 characters');
+      return;
     }
+    if (wizardStep === 1) {
+      if (!form.path.trim()) {
+        setError('A local project path is required');
+        return;
+      }
+      if (!(await validatePath())) {
+        setError(`Path not found: ${form.path}. Enter an absolute path the backend can read.`);
+        return;
+      }
+    }
+    if (wizardStep === 3 && probeResults[form.adapterType]?.status !== 'ready') {
+      setError('Run the environment check and make sure the adapter responds before creating the project.');
+      return;
+    }
+
     if (wizardStep < STEPS.length - 1) {
       setWizardStep((s) => s + 1);
     } else {
@@ -113,7 +145,7 @@ export const Projects = () => {
             >
               <div className="flex items-start justify-between mb-3">
                 <Folder className="w-5 h-5 text-primary" />
-                <Badge variant="secondary">{project.aiProvider || 'N/A'}</Badge>
+                <Badge variant="secondary">{project.adapterType || 'no adapter'}</Badge>
               </div>
               <h3 className="font-semibold mb-1">{project.name}</h3>
               {project.description && (
@@ -141,7 +173,7 @@ export const Projects = () => {
         </div>
       )}
 
-      <Modal isOpen={isWizardOpen} onClose={() => { setIsWizardOpen(false); setWizardStep(0); }} title={`Step ${wizardStep + 1}: ${STEPS[wizardStep]}`} size="lg">
+      <Modal isOpen={isWizardOpen} onClose={closeWizard} title={`Step ${wizardStep + 1}: ${STEPS[wizardStep]}`} size="lg">
         <div className="space-y-4">
           <div className="flex gap-2 mb-6">
             {STEPS.map((_, i) => (
@@ -179,10 +211,13 @@ export const Projects = () => {
               <input
                 value={form.path}
                 onChange={(e) => setForm((f) => ({ ...f, path: e.target.value }))}
-                className="w-full px-3 py-2 rounded-md border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                placeholder="/path/to/project"
+                className="w-full px-3 py-2 rounded-md border border-input bg-background text-sm font-mono focus:outline-none focus:ring-2 focus:ring-ring"
+                placeholder="/Users/you/Documents/GitHub/my-repo"
               />
-              <p className="text-xs text-muted-foreground mt-1">Absolute path to the project directory on your machine.</p>
+              <p className="text-xs text-muted-foreground mt-1">
+                Absolute path to the repository. The adapter CLI runs with this as its working directory,
+                so in Docker mode the path must also be mounted into the backend container.
+              </p>
             </div>
           )}
 
@@ -199,35 +234,30 @@ export const Projects = () => {
           )}
 
           {wizardStep === 3 && (
-            <>
-              <div>
-                <label className="block text-sm font-medium mb-1">AI Provider</label>
-                <select
-                  value={form.aiProvider}
-                  onChange={(e) => setForm((f) => ({ ...f, aiProvider: e.target.value }))}
-                  className="w-full px-3 py-2 rounded-md border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                >
-                  <option value="openai">OpenAI</option>
-                  <option value="anthropic">Anthropic</option>
-                  <option value="google">Google Gemini</option>
-                  <option value="ollama">Ollama (Local)</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">API Key</label>
-                <input
-                  type="password"
-                  value={form.apiKey}
-                  onChange={(e) => setForm((f) => ({ ...f, apiKey: e.target.value }))}
-                  className="w-full px-3 py-2 rounded-md border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                  placeholder="sk-..."
-                />
-              </div>
-            </>
+            <div className="space-y-4">
+              <p className="text-sm text-muted-foreground">
+                Pick the adapter and model this project's tasks will run on, then check the environment.
+              </p>
+              <AdapterPicker
+                selectedAdapter={form.adapterType}
+                onSelectAdapter={(id) => setForm((f) => ({ ...f, adapterType: id, adapterModel: 'auto' }))}
+                selectedModel={form.adapterModel}
+                onSelectModel={(model) => setForm((f) => ({ ...f, adapterModel: model }))}
+                probeResults={probeResults}
+                onProbeResult={(id, result) => setProbeResults((prev) => ({ ...prev, [id]: result }))}
+              />
+            </div>
+          )}
+
+          {error && (
+            <div className="flex items-start gap-2 text-sm text-destructive bg-destructive/10 px-3 py-2 rounded-md">
+              <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
+              <span>{error}</span>
+            </div>
           )}
 
           <div className="flex justify-between pt-4">
-            <Button variant="ghost" onClick={() => wizardStep > 0 ? setWizardStep((s) => s - 1) : setIsWizardOpen(false)}>
+            <Button variant="ghost" onClick={() => (wizardStep > 0 ? setWizardStep((s) => s - 1) : closeWizard())}>
               {wizardStep === 0 ? 'Cancel' : 'Back'}
             </Button>
             <Button onClick={handleNext} isLoading={createProject.isPending}>
