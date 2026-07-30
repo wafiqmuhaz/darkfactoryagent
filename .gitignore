@@ -55,19 +55,19 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
-# All MD Files
-ADAPTERS.md
-AGENTS.md
-ARCHITECTURE.md
-DESC_ROADMAP.md
-ONBOARDING_FLOW.md
-README_FILES.md
-README.md
-ROADMAP.md
-ROUTINES.md
-SKILLS_STORE.md
-SKILLS_SYSTEM.md
-SYSTEM_FLOW.md
+# Root Documentation
+/ADAPTERS.md
+/AGENTS.md
+/ARCHITECTURE.md
+/DESC_ROADMAP.md
+/ONBOARDING_FLOW.md
+/README_FILES.md
+/README.md
+/ROADMAP.md
+/ROUTINES.md
+/SKILLS_STORE.md
+/SKILLS_SYSTEM.md
+/SYSTEM_FLOW.md
 
-# Docs 
+# Docs
 docs/
