@@ -5,8 +5,13 @@ import { pipeline } from './pipeline';
 class SchedulerService {
   private nightlyJob: cron.ScheduledTask | null = null;
   private priorityJob: cron.ScheduledTask | null = null;
+  private summaryJob: cron.ScheduledTask | null = null;
+  private isRunning = false;
 
   start() {
+    if (this.isRunning) return;
+    this.isRunning = true;
+
     // 8:00 PM Prioritization
     this.priorityJob = cron.schedule('0 20 * * *', async () => {
       logger.info('Running nightly prioritization');
@@ -28,7 +33,7 @@ class SchedulerService {
     });
 
     // 6:00 AM Nightly Summary
-    cron.schedule('0 6 * * *', async () => {
+    this.summaryJob = cron.schedule('0 6 * * *', async () => {
       logger.info('Generating nightly summary');
       try {
         await pipeline.generateSummary();
@@ -43,6 +48,8 @@ class SchedulerService {
   stop() {
     this.nightlyJob?.stop();
     this.priorityJob?.stop();
+    this.summaryJob?.stop();
+    this.isRunning = false;
     logger.info('Scheduler service stopped');
   }
 }

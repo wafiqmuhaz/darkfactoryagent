@@ -33,6 +33,8 @@ import { apiRateLimiter } from './middleware/rateLimiter';
 
 import { initQueueWorker } from './orchestrator/queue';
 import { initSkills } from './skills';
+import { schedulerService } from './orchestrator/scheduler';
+import { routineScheduler } from './orchestrator/routine-scheduler';
 
 const app = express();
 const httpServer = createServer(app);
@@ -116,6 +118,14 @@ let workerInstance: any = null;
 if (MODE === 'worker' || MODE === 'monolith') {
   workerInstance = initQueueWorker();
   logger.info(`Initialized BullMQ Background Worker (Mode: ${MODE})`);
+
+  // Boot the cron-driven pipeline (nightly prioritize/build/summary) and
+  // the user-routine scheduler. Both are guarded internally against invalid state.
+  schedulerService.start();
+  routineScheduler
+    .start()
+    .catch((err) => logger.error(`Routine scheduler failed to start: ${err.message}`));
+  logger.info(`Initialized nightly pipeline + routine schedulers (Mode: ${MODE})`);
 }
 
 // Register built-in skills and restore their persisted enabled/disabled state.
@@ -130,6 +140,8 @@ httpServer.listen(PORT, () => {
 const shutdown = async () => {
   logger.info('Shutting down gracefully...');
   if (workerInstance) await workerInstance.close();
+  schedulerService.stop();
+  await routineScheduler.stop();
   httpServer.close(() => process.exit(0));
 };
 
