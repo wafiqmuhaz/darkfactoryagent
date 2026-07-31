@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { authenticate, AuthRequest } from '../middleware/auth';
+import { requireCompanyRole } from '../middleware/rbac';
 import { logger } from '../utils/logger';
 import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
@@ -30,8 +31,8 @@ companyRoutes.get('/', authenticate, async (req, res) => {
   }
 });
 
-// PUT /api/company — Update company details
-companyRoutes.put('/', authenticate, async (req, res) => {
+// PUT /api/company — Update company details (admin+)
+companyRoutes.put('/', authenticate, requireCompanyRole('admin'), async (req, res) => {
   try {
     const userId = (req as AuthRequest).userId!;
     const { name, mission } = req.body;
@@ -124,8 +125,8 @@ companyRoutes.delete('/members/:userId', authenticate, async (req, res) => {
   }
 });
 
-// POST /api/company/invites — Create an invite
-companyRoutes.post('/invites', authenticate, async (req, res) => {
+// POST /api/company/invites — Create an invite (admin+)
+companyRoutes.post('/invites', authenticate, requireCompanyRole('admin'), async (req, res) => {
   try {
     const { email, role } = req.body;
     if (!email) return res.status(400).json({ error: 'Email is required' });
@@ -177,8 +178,8 @@ companyRoutes.get('/invites', authenticate, async (req, res) => {
   }
 });
 
-// DELETE /api/company/invites/:id — Revoke an invite
-companyRoutes.delete('/invites/:id', authenticate, async (req, res) => {
+// DELETE /api/company/invites/:id — Revoke an invite (admin+)
+companyRoutes.delete('/invites/:id', authenticate, requireCompanyRole('admin'), async (req, res) => {
   try {
     const id = req.params.id as string;
     await prisma.invite.update({
@@ -191,8 +192,8 @@ companyRoutes.delete('/invites/:id', authenticate, async (req, res) => {
   }
 });
 
-// POST /api/company/secrets — Store a secret
-companyRoutes.post('/secrets', authenticate, async (req, res) => {
+// POST /api/company/secrets — Store a secret (admin+)
+companyRoutes.post('/secrets', authenticate, requireCompanyRole('admin'), async (req, res) => {
   try {
     const { key, value, scope } = req.body;
     if (!key || !value) return res.status(400).json({ error: 'key and value are required' });
@@ -213,8 +214,8 @@ companyRoutes.post('/secrets', authenticate, async (req, res) => {
   }
 });
 
-// DELETE /api/company/secrets/:key — Delete a secret
-companyRoutes.delete('/secrets/:key', authenticate, async (req, res) => {
+// DELETE /api/company/secrets/:key — Delete a secret (admin+)
+companyRoutes.delete('/secrets/:key', authenticate, requireCompanyRole('admin'), async (req, res) => {
   try {
     const key = req.params.key as string;
     const scope = req.query.scope as string || 'user';

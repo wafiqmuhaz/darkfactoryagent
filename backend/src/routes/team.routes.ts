@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { PrismaClient } from '@prisma/client';
-import { authenticate } from '../middleware/auth';
+import { authenticate, AuthRequest } from '../middleware/auth';
+import { requireTeamRole } from '../middleware/rbac';
 
 const prisma = new PrismaClient();
 export const teamRoutes = Router();
@@ -26,7 +27,7 @@ teamRoutes.post('/', authenticate, async (req, res) => {
     });
     // Auto-add creator as owner
     await prisma.teamMember.create({
-      data: { teamId: team.id, userId: (req as any).user?.id ?? 'system', role: 'owner' },
+      data: { teamId: team.id, userId: (req as AuthRequest).userId!, role: 'owner' },
     });
     return res.status(201).json({ team });
   } catch (error: any) {
@@ -45,8 +46,8 @@ teamRoutes.get('/:id', authenticate, async (req, res) => {
   return res.json({ team });
 });
 
-// POST /api/teams/:id/members — Invite a user to team
-teamRoutes.post('/:id/members', authenticate, async (req, res) => {
+// POST /api/teams/:id/members — Invite a user to team (admin+)
+teamRoutes.post('/:id/members', authenticate, requireTeamRole('admin'), async (req, res) => {
   const id = req.params.id as string;
   const { userId, role } = req.body;
   if (!userId) return res.status(400).json({ error: 'userId is required' });
@@ -68,8 +69,8 @@ teamRoutes.post('/:id/members', authenticate, async (req, res) => {
   }
 });
 
-// DELETE /api/teams/:id/members/:userId — Remove member
-teamRoutes.delete('/:id/members/:userId', authenticate, async (req, res) => {
+// DELETE /api/teams/:id/members/:userId — Remove member (admin+)
+teamRoutes.delete('/:id/members/:userId', authenticate, requireTeamRole('admin'), async (req, res) => {
   const teamId = req.params.id as string;
   const userId = req.params.userId as string;
   await prisma.teamMember.deleteMany({
@@ -78,8 +79,8 @@ teamRoutes.delete('/:id/members/:userId', authenticate, async (req, res) => {
   res.json({ success: true });
 });
 
-// PATCH /api/teams/:id/members/:userId — Update member role
-teamRoutes.patch('/:id/members/:userId', authenticate, async (req, res) => {
+// PATCH /api/teams/:id/members/:userId — Update member role (owner only)
+teamRoutes.patch('/:id/members/:userId', authenticate, requireTeamRole('owner'), async (req, res) => {
   const teamId = req.params.id as string;
   const userId = req.params.userId as string;
   const { role } = req.body;
@@ -97,8 +98,8 @@ teamRoutes.get('/:id/workspaces', authenticate, async (req, res) => {
   res.json({ workspaces });
 });
 
-// POST /api/teams/:id/workspaces — Create a workspace
-teamRoutes.post('/:id/workspaces', authenticate, async (req, res) => {
+// POST /api/teams/:id/workspaces — Create a workspace (member+)
+teamRoutes.post('/:id/workspaces', authenticate, requireTeamRole('member'), async (req, res) => {
   const id = req.params.id as string;
   const { name, description, settings } = req.body;
   const workspace = await prisma.workspace.create({

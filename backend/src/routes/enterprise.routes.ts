@@ -1,14 +1,18 @@
 import { Router } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { authenticate } from '../middleware/authenticate';
+import { requireAdmin } from '../middleware/rbac';
 
 const prisma = new PrismaClient();
 export const enterpriseRoutes = Router();
 
+// All enterprise/admin-console endpoints require admin (company owner) privileges.
+enterpriseRoutes.use(authenticate, requireAdmin);
+
 // ─── Admin Console (6.14) ────────────────────────────────────────────
 
 // GET /api/enterprise/stats — Admin dashboard summary
-enterpriseRoutes.get('/stats', authenticate, async (req, res) => {
+enterpriseRoutes.get('/stats', async (req, res) => {
   const [userCount, projectCount, taskCount, teamCount, agentRunCount] = await Promise.all([
     prisma.user.count(),
     prisma.project.count(),
@@ -41,7 +45,7 @@ enterpriseRoutes.get('/stats', authenticate, async (req, res) => {
 });
 
 // GET /api/enterprise/users — Admin: list all users
-enterpriseRoutes.get('/users', authenticate, async (req, res) => {
+enterpriseRoutes.get('/users', async (req, res) => {
   const users = await prisma.user.findMany({
     select: { id: true, username: true, email: true, createdAt: true, updatedAt: true },
     orderBy: { createdAt: 'desc' },
@@ -50,7 +54,7 @@ enterpriseRoutes.get('/users', authenticate, async (req, res) => {
 });
 
 // DELETE /api/enterprise/users/:id — Admin: delete user
-enterpriseRoutes.delete('/users/:id', authenticate, async (req, res) => {
+enterpriseRoutes.delete('/users/:id', async (req, res) => {
   const id = req.params.id as string;
   await prisma.user.delete({ where: { id } });
   res.json({ success: true });
@@ -59,7 +63,7 @@ enterpriseRoutes.delete('/users/:id', authenticate, async (req, res) => {
 // ─── Billing (6.14) ─────────────────────────────────────────────────
 
 // GET /api/enterprise/billing/:teamId — Get invoices for team
-enterpriseRoutes.get('/billing/:teamId', authenticate, async (req, res) => {
+enterpriseRoutes.get('/billing/:teamId', async (req, res) => {
   const teamId = req.params.teamId as string;
   const invoices = await prisma.invoice.findMany({
     where: { teamId },
@@ -69,7 +73,7 @@ enterpriseRoutes.get('/billing/:teamId', authenticate, async (req, res) => {
 });
 
 // POST /api/enterprise/billing/:teamId/invoice — Create invoice
-enterpriseRoutes.post('/billing/:teamId/invoice', authenticate, async (req, res) => {
+enterpriseRoutes.post('/billing/:teamId/invoice', async (req, res) => {
   const teamId = req.params.teamId as string;
   const { amount, currency, description, period } = req.body;
   if (!amount) return res.status(400).json({ error: 'amount is required' });
@@ -87,7 +91,7 @@ enterpriseRoutes.post('/billing/:teamId/invoice', authenticate, async (req, res)
 });
 
 // PATCH /api/enterprise/billing/invoices/:id — Update invoice status
-enterpriseRoutes.patch('/billing/invoices/:id', authenticate, async (req, res) => {
+enterpriseRoutes.patch('/billing/invoices/:id', async (req, res) => {
   const id = req.params.id as string;
   const { status } = req.body;
   const invoice = await prisma.invoice.update({
@@ -103,7 +107,7 @@ enterpriseRoutes.patch('/billing/invoices/:id', authenticate, async (req, res) =
 // ─── Plan Management (6.14) ─────────────────────────────────────────
 
 // PATCH /api/enterprise/teams/:id/plan — Update team plan (upgrade/downgrade)
-enterpriseRoutes.patch('/teams/:id/plan', authenticate, async (req, res) => {
+enterpriseRoutes.patch('/teams/:id/plan', async (req, res) => {
   const id = req.params.id as string;
   const { plan } = req.body;
   if (!['free', 'pro', 'enterprise'].includes(plan)) {
@@ -120,7 +124,7 @@ enterpriseRoutes.patch('/teams/:id/plan', authenticate, async (req, res) => {
 // ─── Compliance (6.14) ──────────────────────────────────────────────
 
 // GET /api/enterprise/audit-log — Get recent audit trail
-enterpriseRoutes.get('/audit-log', authenticate, async (req, res) => {
+enterpriseRoutes.get('/audit-log', async (req, res) => {
   const { limit = '50' } = req.query as Record<string, string>;
   const runs = await prisma.agentRun.findMany({
     orderBy: { createdAt: 'desc' },
