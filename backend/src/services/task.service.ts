@@ -36,6 +36,8 @@ export interface CreateTaskInput {
   parentTaskId?: string;
   /** Set false to leave the task in the backlog instead of queueing it. */
   autoRun?: boolean;
+  /** Which agent handles this task when queued. Defaults to 'adapter-exec' (CodeAgent). */
+  agentType?: string;
 }
 
 export interface UpdateTaskInput {
@@ -81,7 +83,7 @@ export class TaskService {
 
     // Creating a task is the trigger: push it onto the queue unless told otherwise.
     if (input.autoRun !== false) {
-      await this.enqueueTask(task);
+      await this.enqueueTask(task, input.agentType);
     }
 
     return task;
@@ -92,11 +94,18 @@ export class TaskService {
    * queued-in-spirit: it is marked todo and the failure is logged, so it can be
    * run manually from the board rather than silently disappearing.
    */
-  async enqueueTask(task: { id: string; projectId: string; priority: string; title: string }) {
+  async enqueueTask(
+    task: { id: string; projectId: string; priority: string; title: string },
+    agentType?: string
+  ) {
     try {
       const job = await taskQueue.add(
         'task-run',
-        { agentType: 'adapter-exec', taskId: task.id, projectId: task.projectId },
+        {
+          agentType: agentType ?? 'adapter-exec',
+          taskId: task.id,
+          projectId: task.projectId
+        },
         { priority: priorityToQueueWeight(task.priority) }
       );
 

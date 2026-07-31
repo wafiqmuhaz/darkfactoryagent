@@ -62,7 +62,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   },
   {
     id: 'gemini-2.5-flash',
-    provider: 'gemini',
+    provider: 'google',
     displayName: 'Gemini 2.5 Flash',
     tier: 'economy',
     capabilities: ['general', 'code', 'multimodal'],

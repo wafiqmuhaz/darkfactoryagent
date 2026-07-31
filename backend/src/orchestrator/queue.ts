@@ -1,10 +1,9 @@
 import { Worker, Job } from 'bullmq';
 import { config } from '../config';
 import { logger } from '../utils/logger';
-import { chiefOfStaffAgent } from '../agents/chief-of-staff';
+import { agentRegistry } from '../agents/agent-registry';
 import { AgentContext } from '../agents/base-agent';
 import { dataLakeService } from '../services/datalake.service';
-import { taskExecutionService } from '../services/task-execution.service';
 import { taskService, TaskStatus } from '../services/task.service';
 import { activityService } from '../services/activity.service';
 
@@ -25,25 +24,17 @@ export const initQueueWorker = () => {
       const { taskId, projectId, agentType } = job.data;
       logger.info(`Processing job ${job.id} for task ${taskId} (attempt ${job.attemptsMade + 1})`);
 
-      // Adapter-backed run: the task's description is handed to Claude Code / Codex.
-      if (agentType === 'adapter-exec' || agentType === 'task-run') {
-        // taskExecutionService owns the full lifecycle — status transitions,
-        // AgentRun bookkeeping, cost ledger, artifacts, and activity entries.
-        const result = await taskExecutionService.executeTask(taskId);
-        if (!result.success) {
-          // Throwing lets BullMQ retry with backoff; the final failure state is
-          // already recorded by the service.
-          throw new Error(result.error || 'Adapter execution failed');
-        }
-        return result;
+      // Dynamic agent dispatch via registry
+      const agent = agentRegistry.get(agentType);
+      if (!agent) {
+        const registered = agentRegistry.list().map((d) => d.agentType).join(', ');
+        throw new Error(
+          `No agent registered for type '${agentType}'. Registered: ${registered}`
+        );
       }
 
-      if (agentType === 'chief-of-staff') {
-        const context: AgentContext = { projectId, taskId, agentRunId: job.id! };
-        return await chiefOfStaffAgent.execute(context, job.data.input);
-      }
-
-      throw new Error(`Unknown agent type: ${agentType}`);
+      const context: AgentContext = { projectId, taskId, agentRunId: job.id! };
+      return await agent.execute(context, job.data.input);
     },
     { connection, concurrency: config.agents.maxConcurrent }
   );

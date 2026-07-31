@@ -286,30 +286,26 @@ INPUT PROMPT
 
 ///PROMPT
 saya ingin anda membaca, mempelajari dan menganalisa project ini kemudian saya ingin anda ......
-Saya ingin anda memperbaiki, melihat isi dari foler flowsystem, yang dimana saya ingin anda mulai menyusun ulang flow sesuai dengan yang ada di folder dengan seperti flow dari paperclip(namun paperclip diperuntukkan untuk ai agent company) dan disesuaikan dengan project ini darfactoryagent(jika paperclip untuk ai agent company membuat dari awal sebuah company maka darkfactoryagent company dan projectnya sudah ada, jadi mengerjkan projectnya saja), jadi mulailah dulu untuk menggabungkan seluruh dari file 1.html sampai 13_settings.html menjadi 1 file/1 project didalam folder flowsyste(paperclip_flow_to_darkfactory_flow), kemudian perbaiki sesuai dengan yang ada di dalam folder flowsyste(darkfactoryagent) dan pastikan tidak ada yang salah, jangan ada kode yang terhapus dan juga tetap pertahankan desain yang ada, namun jika ingin memperbaikinya juga dipersilahkan. kemudian, tugas anda selanjutnya adalah mulai memodifikasi dan mengupgrade seluruh file-file .md yang berhubungan dengan darkfactoryagent seperti:
-/ADAPTERS.md
-/AGENTS.md
-/ARCHITECTURE.md
-/DESC_ROADMAP.md
-/ONBOARDING_FLOW.md
-/README_FILES.md
-/ROADMAP.md
-/ROUTINES.md
-/SKILLS_STORE.md
-/SKILLS_SYSTEM.md
-/SYSTEM_FLOW.md
-menjadi _V2.md=
-/ADAPTERS_V2.md
-/AGENTS_V2.md
-/ARCHITECTURE_V2.md
-/DESC_ROADMAP_V2.md
-/ONBOARDING_FLOW_V2.md
-/README_FILES_V2.md
-/ROADMAP_V2.md
-/ROUTINES_V2.md
-/SKILLS_STORE_V2.md
-/SKILLS_SYSTEM_V2.md
-/SYSTEM_FLOW_V2.md
+untuk membaca seluruh file file md V2/ _V2.md pada root project yang dimana selanjutnya saya ingin anda membaca, mempelajari dan menganalisa ROADMAP_V2.md dan DESC_ROADMAP_V2.md untuk kemudian anda agar mengerjakan mulai dari 
+
+PHASE 1 — Analysis & Planning
+
+- `[x]` 1.1–1.5 analysis, `[~]` 1.6 schema (SQLite, no enums, camelCase+`@map` — not the
+  8-table sketch), `[~]` 1.7 API contract (real routes; no OpenAPI file), `[~]` 1.9 skill
+  interface (`SkillDefinition`, not `ISkill`), `[~]` 1.10 dev env (oxlint only; **no** ESLint /
+  Prettier / test framework / Ollama).
+
+dan desc roadmapnya=
+
+
+## PHASE 1 — Analysis & Planning
+
+Documentation/planning phase. The schema, API contract, and skill interface do exist in code —
+but note the **as-built** shapes differ from the original's sketches: SQLite (no Prisma enums),
+`SkillDefinition` (not `ISkill`), camelCase + `@map` columns. See `ARCHITECTURE_V2.md` §"Data
+model reality". Dev-env claims of ESLint/Prettier/Ollama are **not** in the repo (frontend uses
+oxlint only; no test framework anywhere).
+
 
 ==========================
 END OF PROMPT

@@ -3,6 +3,17 @@ import path from 'path';
 
 dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
+// Normalize provider env-var aliases. The AI provider classes read their own
+// variable names (GOOGLE_AI_API_KEY, OLLAMA_URL) while the rest of the app and
+// .env.example use GEMINI_API_KEY / OLLAMA_BASE_URL. Bridge them here — before
+// any provider module loads — so a single key works everywhere.
+if (!process.env.GOOGLE_AI_API_KEY && process.env.GEMINI_API_KEY) {
+  process.env.GOOGLE_AI_API_KEY = process.env.GEMINI_API_KEY;
+}
+if (!process.env.OLLAMA_URL && process.env.OLLAMA_BASE_URL) {
+  process.env.OLLAMA_URL = process.env.OLLAMA_BASE_URL;
+}
+
 export const config = {
   // Server
   nodeEnv: process.env.NODE_ENV || 'development',
