@@ -17,7 +17,24 @@ import { logger } from '../utils/logger';
 const HOST_GATEWAY = 'host.docker.internal';
 const LOOPBACK_PATTERN = /\b(127\.0\.0\.1|localhost|0\.0\.0\.0)\b/g;
 
+// Cache is keyed by the source config files' mtimes, so any change on the host
+// (a new model, a new endpoint) is picked up on the next adapter invocation
+// instead of being locked in for the life of the process.
 let cachedEnv: Record<string, string> | null = null;
+let cachedFingerprint = '';
+
+/** mtime-based signature of the config files that feed the rewritten copies. */
+function configFingerprint(...paths: string[]): string {
+  return paths
+    .map((p) => {
+      try {
+        return `${p}:${fs.statSync(p).mtimeMs}`;
+      } catch {
+        return `${p}:missing`;
+      }
+    })
+    .join('|');
+}
 
 /** True when this process is running inside a container. */
 export function isContainerized(): boolean {
@@ -84,8 +101,16 @@ function prepareClaudeHome(): string | null {
     if (entry === 'settings.json') continue;
     copyInto(path.join(sourceDir, entry), path.join(target, entry));
   }
-  // The CLI expects .claude.json inside its config dir.
-  copyInto(sourceJson, path.join(target, '.claude.json'));
+  // The CLI expects .claude.json inside its config dir. The file is large and is
+  // replaced atomically by the host CLI, so it can be mid-write or a rename away
+  // from the mounted inode — skip it rather than hand the CLI a corrupt config.
+  try {
+    const raw = fs.readFileSync(sourceJson, 'utf8');
+    JSON.parse(raw); // throws when the host left it in a partial state
+    copyInto(sourceJson, path.join(target, '.claude.json'));
+  } catch {
+    logger.warn('[adapter-env] host .claude.json is invalid or unreadable; omitting it from the rewritten config');
+  }
   fs.writeFileSync(path.join(target, 'settings.json'), JSON.stringify(settings, null, 2));
 
   return target;
@@ -139,10 +164,16 @@ function prepareCodexHome(): string | null {
  * and empty inside a container when no config pointed at loopback.
  */
 export function adapterEnvOverrides(): Record<string, string> {
-  if (cachedEnv) return cachedEnv;
+  const sourcePaths = [path.join(os.homedir(), '.claude', 'settings.json'), path.join(os.homedir(), '.codex', 'config.toml')];
+  const fingerprint = configFingerprint(...sourcePaths);
+
+  if (cachedEnv && cachedFingerprint === fingerprint) {
+    return cachedEnv;
+  }
 
   if (!isContainerized()) {
     cachedEnv = {};
+    cachedFingerprint = fingerprint;
     return cachedEnv;
   }
 
@@ -158,6 +189,7 @@ export function adapterEnvOverrides(): Record<string, string> {
   }
 
   cachedEnv = overrides;
+  cachedFingerprint = fingerprint;
   return overrides;
 }
 
